@@ -1,0 +1,31 @@
+# Secrets & environment
+.env
+.env.*
+.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Runtime save state (regenerated on play)
+state/
+
+# Test & run outputs
+pipeline_runs/
+
+# Internal notes & scratch
+HANDOFF.md
+huh.txt
+
+# Ad-hoc Foundry connection/debug scripts (not part of the deliverable)
+test_connections.py
+test_create_agents.py
+test_invoke_agent.py
+test_search.py
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
