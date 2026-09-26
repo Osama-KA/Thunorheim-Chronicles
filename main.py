@@ -7,6 +7,7 @@ persists in state/session_state.json between turns and between sessions.
 
 from __future__ import annotations
 
+import asyncio
 import io
 import sys
 
@@ -84,7 +85,7 @@ def main() -> None:
             print("\nThe saga waits. State saved.")
             break
         try:
-            print("\n" + dm.run_turn(action) + "\n")
+            print("\n" + asyncio.run(dm.run_turn(action)) + "\n")
         except Exception as exc:  # turn already rolled back inside run_turn
             print(f"\n[The turn faltered and was rolled back — state is unchanged.]\n{exc}\n")
             continue

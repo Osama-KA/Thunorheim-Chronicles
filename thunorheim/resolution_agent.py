@@ -8,13 +8,18 @@ narrative convenience — and returns a structured verdict: per-bucket evaluatio
 combined outcome, a consequence tier, a factual narration seed, a validated numeric
 state delta, an XP award, and an interjection score+candidate.
 
-The rules are baked into the system prompt (foundry.get_rules()) rather than
+The rules are baked into the system prompt (lore.get_rules()) rather than
 retrieved per turn, so a bucket can never be split across RAG chunks.
 """
 
 from __future__ import annotations
 
-from . import foundry, llm
+from typing import Any
+
+from . import llm, lore
+from .schemas import Routing, Verdict
+
+PROMPT = "resolve@2"
 
 _VERDICT_CONTRACT = """
 You output ONLY a JSON object with this exact shape:
@@ -51,7 +56,8 @@ You output ONLY a JSON object with this exact shape:
     "type": null,
     "description": null
   },
-  "reasoning_trace": "<one short paragraph: the honest logic of why this outcome, citing the world state and rules>"
+  "rationale": "<1-2 plain sentences a player could read: why this outcome, citing what mattered>",
+  "suggested_actions": ["<3 short, distinct things the player could try next, first person>"]
 }
 
 YOU SEE RAW NUMBERS. The world state gives you the player's exact hp and
@@ -168,26 +174,27 @@ HARD RULES:
 """.strip()
 
 
-def resolve(
+async def resolve(
     player_action: str,
-    routing: dict,
-    world_fields: dict,
-    npc_stance: dict | None,
+    routing: Routing,
+    world_fields: dict[str, Any],
+    npc_stance: dict[str, Any] | None,
     world_knowledge: str,
-) -> dict:
+) -> Verdict:
     system = (
         "You are the Resolution Agent for the Thunorheim RPG. You are the logic "
         "engine. Evaluate actions strictly through the rules below using honest "
         "logical reasoning. There are no dice.\n\n"
         "===== RULES (seven buckets + role capabilities) =====\n"
-        f"{foundry.get_rules()}\n\n"
+        f"{lore.get_rules()}\n\n"
         "===== OUTPUT CONTRACT =====\n"
         f"{_VERDICT_CONTRACT}"
     )
 
+    buckets = [b.model_dump() for b in routing.buckets]
     parts = [
         f"PLAYER ACTION:\n{player_action}",
-        f"\nDM ROUTING (buckets/intents identified):\n{routing.get('buckets')}",
+        f"\nDM ROUTING (buckets/intents identified):\n{buckets}",
         f"\nRELEVANT WORLD STATE (includes raw numbers):\n{world_fields}",
     ]
     if npc_stance:
@@ -199,4 +206,4 @@ def resolve(
         parts.append(f"\nRELEVANT WORLD KNOWLEDGE:\n{world_knowledge}")
     parts.append("\nEvaluate and return the verdict JSON.")
 
-    return llm.chat_json(system, "\n".join(parts), caller="resolution")
+    return await llm.structured("resolve", Verdict, system, "\n".join(parts), prompt=PROMPT)

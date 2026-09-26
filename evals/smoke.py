@@ -10,6 +10,7 @@ still works end to end.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import tempfile
 
@@ -64,7 +65,7 @@ def main() -> None:
         print(f"TURN: {label}")
         print(f"> {action}\n")
         try:
-            print(dm.run_turn(action))
+            print(asyncio.run(dm.run_turn(action)))
         except Exception as exc:
             print(f"[turn rolled back] {exc}")
         print()

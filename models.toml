@@ -1,0 +1,40 @@
+# Which model plays which role. Each role lists "provider:model" in failover order.
+#
+# `use` records what the provider's terms allow:
+#   public — may serve the hosted demo
+#   dev    — internal testing and evaluation only (NVIDIA API trial terms)
+# THUNORHEIM_PROFILE=public drops every `dev` provider from every chain.
+#
+# `json` is how the provider enforces JSON output:
+#   object — response_format {"type": "json_object"}
+#   none   — prompt-only; the reply is still schema-validated
+#
+# See docs/providers.md for the capability matrix and sources.
+
+[providers.gemini]
+base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
+key_env = "GEMINI_API_KEY"
+use = "public"
+json = "object"
+stream_usage = true
+
+[providers.groq]
+base_url = "https://api.groq.com/openai/v1"
+key_env = "GROQ_API_KEY"
+use = "public"
+json = "object"
+stream_usage = true
+
+[providers.nvidia]
+base_url = "https://integrate.api.nvidia.com/v1"
+key_env = "NVIDIA_API_KEY"
+use = "dev"
+json = "none"
+stream_usage = false
+
+[roles]
+route = ["groq:openai/gpt-oss-20b", "gemini:gemini-2.5-flash-lite"]
+resolve = ["gemini:gemini-2.5-flash", "nvidia:openai/gpt-oss-120b"]
+npc = ["gemini:gemini-2.5-flash-lite", "nvidia:openai/gpt-oss-120b"]
+narrate = ["gemini:gemini-2.5-flash", "groq:openai/gpt-oss-120b"]
+sim = ["nvidia:openai/gpt-oss-120b", "gemini:gemini-2.5-flash-lite"]  # AI player for evals

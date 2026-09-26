@@ -19,8 +19,14 @@ Two responsibilities, called by the DM Agent at two different points in a turn:
 
 from __future__ import annotations
 
-from . import foundry, llm
+from typing import Any
+
+from . import llm, lore
+from .schemas import NpcResolution, Verdict
 from .world_state import WorldState, coerce_disposition
+
+ENSURE_PROMPT = "npc-ensure@2"
+RENDER_PROMPT = "npc-render@2"
 
 _LORE_NPCS = [
     "Aldric Vane",
@@ -36,15 +42,17 @@ _LORE_NPCS = [
 ]
 
 
-def ensure_npc(reference: str, situation: str, ws: WorldState, active_npc: str = "") -> dict:
+async def ensure_npc(
+    reference: str, situation: str, ws: WorldState, active_npc: str = ""
+) -> dict[str, Any]:
     """Resolve, load-or-create, and return {sheet, stance, created}.
 
     `active_npc` is the canonical name of the character the player is currently in
     conversation with (from the previous turn). It anchors ambiguous references so a
     bare pronoun doesn't jump to the wrong character."""
     met = list(ws.get_state()["npcs_met"])
-    lore = foundry.query_world_knowledge(reference, topics=["location", "companions", "factions"])
-    templates = foundry.get_npc_templates()
+    knowledge = lore.query_world_knowledge(["location", "companions", "factions"])
+    templates = lore.get_npc_templates()
 
     system = (
         "You are the NPC Agent for the Thunorheim RPG — the consistency layer. "
@@ -84,31 +92,26 @@ def ensure_npc(reference: str, situation: str, ws: WorldState, active_npc: str =
     user = (
         f"PLAYER REFERRED TO: {reference}\n"
         f"SITUATION: {situation}\n\n"
-        f"WORLD KNOWLEDGE (named lore characters & places):\n{lore}\n\n"
+        f"WORLD KNOWLEDGE (named lore characters & places):\n{knowledge}\n\n"
         f"NPC GENERATION TEMPLATES (for new characters only):\n{templates}"
     )
-    res = llm.chat_json(system, user, caller="npc")
+    res = await llm.structured("npc", NpcResolution, system, user, prompt=ENSURE_PROMPT)
 
-    name = res["canonical_name"]
+    name = res.canonical_name
     created = False
-    if ws.npc_exists(name):
-        sheet = ws.get_npc(name)
-    else:
-        profile = res.get("profile") or {"name": name}
-        profile.setdefault("name", name)
-        init = res.get("initial_state") or {}
-        if "disposition_toward_player" in init:
-            init["disposition_toward_player"] = coerce_disposition(
-                init["disposition_toward_player"]
-            )
+    if not ws.npc_exists(name):
+        profile = {**res.profile, "name": name}
+        init = res.initial_state.model_dump()
+        init["disposition_toward_player"] = coerce_disposition(init["disposition_toward_player"])
         ws.create_npc(name, profile, init)
-        sheet = ws.get_npc(name)
         created = True
 
-    return {"sheet": sheet, "stance": res.get("stance", {}), "created": created}
+    return {"sheet": ws.get_npc(name), "stance": res.stance, "created": created}
 
 
-def render(npc_sheet: dict, verdict: dict, situation: str, player_action: str) -> str:
+async def render(
+    npc_sheet: dict[str, Any], verdict: Verdict, situation: str, player_action: str
+) -> str:
     """Voice the NPC's in-character reply, conditioned on the verdict tier."""
     profile = npc_sheet["profile"]
     state = npc_sheet["state"]
@@ -128,9 +131,9 @@ def render(npc_sheet: dict, verdict: dict, situation: str, player_action: str) -
         f"SITUATION: {situation}\n"
         f"PLAYER JUST DID/SAID: {player_action}\n\n"
         f"RESOLUTION VERDICT (the truth you must honor):\n"
-        f"- outcome: {verdict.get('combined_outcome')}\n"
-        f"- tier: {verdict.get('consequence_tier')}\n"
-        f"- what happens: {verdict.get('narration_seed')}\n\n"
+        f"- outcome: {verdict.combined_outcome}\n"
+        f"- tier: {verdict.consequence_tier}\n"
+        f"- what happens: {verdict.narration_seed}\n\n"
         "Give this character's in-character response."
     )
-    return llm.chat(system, user, caller="npc")
+    return await llm.text("npc", system, user, prompt=RENDER_PROMPT)

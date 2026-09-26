@@ -12,6 +12,7 @@ Run: uv run python evals/stress.py
 
 from __future__ import annotations
 
+import asyncio
 import os
 import tempfile
 import traceback
@@ -30,7 +31,6 @@ from thunorheim.world_state import (
 
 OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pipeline_runs")
 os.makedirs(OUT_DIR, exist_ok=True)
-SIM_MODEL = os.environ["AZURE_AI_MODEL_DEPLOYMENT"]
 CANONICAL_FLAGS = {
     "drenhold_discovered",
     "ashen_seal_found",
@@ -57,15 +57,15 @@ _orig_dm_fields = dm_agent._dm_fields
 _orig_render = npc_agent.render
 
 
-def _w_route(*a, **k):
-    r = _orig_route(*a, **k)
-    CAP["routing"] = r
+async def _w_route(*a, **k):
+    r = await _orig_route(*a, **k)
+    CAP["routing"] = r.model_dump()
     return r
 
 
-def _w_resolve(*a, **k):
-    v = _orig_resolve(*a, **k)
-    CAP["verdict"] = v
+async def _w_resolve(*a, **k):
+    v = await _orig_resolve(*a, **k)
+    CAP["verdict"] = v.model_dump()
     return v
 
 
@@ -75,9 +75,9 @@ def _w_dm_fields(ws):
     return r
 
 
-def _w_render(sheet, *a, **k):
+async def _w_render(sheet, *a, **k):
     CAP["npc_sheet"] = sheet
-    return _orig_render(sheet, *a, **k)
+    return await _orig_render(sheet, *a, **k)
 
 
 dm_agent.route = _w_route
@@ -103,11 +103,7 @@ def simulate_player(role: str, theme: str, scene: str, last_narration: str) -> s
     )
     for attempt in range(3):
         try:
-            r = llm._openai_client().chat.completions.create(
-                model=SIM_MODEL,
-                messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
-            )
-            out = (r.choices[0].message.content or "").strip()
+            out = asyncio.run(llm.text("sim", system, user, prompt="sim@1"))
             if out:
                 return out
         except Exception:
@@ -353,7 +349,7 @@ def run_one(run, results):
         CAP.clear()
         pre = snapshot(ws)
         try:
-            prose = dm.run_turn(action)
+            prose = asyncio.run(dm.run_turn(action))
         except Exception as exc:
             prose = f"[ERROR: {exc}]"
             results.append((run["name"], turn, "RUN_TURN_EXCEPTION", False, repr(exc)))

@@ -22,9 +22,16 @@ from __future__ import annotations
 
 import copy
 import random
+from dataclasses import asdict
+from typing import Any
 
-from . import foundry, llm, npc_agent, resolution_agent
+from . import llm, lore, npc_agent, resolution_agent
+from .schemas import Interjection, Routing, Verdict
 from .world_state import WorldState
+
+ROUTE_PROMPT = "route@2"
+NARRATE_PROMPT = "narrate@2"
+RECAP_PROMPT = "recap@2"
 
 # Seedable RNG for the interjection gate (so tests are deterministic).
 _rng = random.Random()
@@ -72,7 +79,7 @@ def _resolution_fields(ws: WorldState) -> dict:
     }
 
 
-def route(player_action: str, ws: WorldState) -> dict:
+async def route(player_action: str, ws: WorldState) -> Routing:
     """Call 1: classify intent, detect overreach, decide NPC involvement and which
     world knowledge to pull."""
     s = ws.get_state()
@@ -122,15 +129,15 @@ def route(player_action: str, ws: WorldState) -> dict:
         "}"
     )
     user = f"PLAYER ACTION:\n{player_action}\n\nCURRENT STATE:\n{_dm_fields(ws)}"
-    return llm.chat_json(system, user, caller="dm")
+    return await llm.structured("route", Routing, system, user, prompt=ROUTE_PROMPT)
 
 
-def narrate(
+async def narrate(
     player_action: str,
-    verdict: dict,
+    verdict: Verdict,
     npc_reply: str | None,
-    events: list[dict],
-    interjection: dict | None,
+    events: list[dict[str, Any]],
+    interjection: dict[str, Any] | None,
     ws: WorldState,
 ) -> str:
     """Call 2: narrate the outcome to the player, faithful to the verdict."""
@@ -165,10 +172,10 @@ def narrate(
     user = (
         f"PLAYER ACTION:\n{player_action}\n\n"
         f"RESOLUTION VERDICT (ground truth):\n"
-        f"- outcome: {verdict.get('combined_outcome')}\n"
-        f"- tier: {verdict.get('consequence_tier')}\n"
-        f"- momentum: {verdict.get('momentum')}\n"
-        f"- what happens: {verdict.get('narration_seed')}\n"
+        f"- outcome: {verdict.combined_outcome}\n"
+        f"- tier: {verdict.consequence_tier}\n"
+        f"- momentum: {verdict.momentum}\n"
+        f"- what happens: {verdict.narration_seed}\n"
     )
     if npc_reply:
         user += f"\nNPC IN-CHARACTER REPLY (honor this):\n{npc_reply}\n"
@@ -189,7 +196,7 @@ def narrate(
     if death:
         user += "\nDEATH: the player character has died. Narrate the end.\n"
     user += "\nNarrate."
-    return llm.chat(system, user, caller="dm")
+    return await llm.collect(llm.stream("narrate", system, user, prompt=NARRATE_PROMPT))
 
 
 class DMAgent:
@@ -198,9 +205,9 @@ class DMAgent:
     def __init__(self, ws: WorldState):
         self.ws = ws
         self.game_over = False
-        self.last_trace: dict = {}  # per-turn telemetry for the UI trace panel
+        self.last_trace: dict[str, Any] = {}  # per-turn telemetry for the UI trace panel
 
-    def recap(self) -> str:
+    async def recap(self) -> str:
         """A short DM-voice 'story so far' from current state, for the Continue flow."""
         s = self.ws.get_state()
         p = s["player"]
@@ -220,10 +227,10 @@ class DMAgent:
             f"PEOPLE MET: {list(s['npcs_met'].keys()) or 'no one yet'}\n\n"
             "Give the 'story so far' recap."
         )
-        return llm.chat(system, user, caller="dm")
+        return await llm.text("narrate", system, user, prompt=RECAP_PROMPT)
 
-    def _overreach_message(self, player_action: str, routing: dict) -> str:
-        explanation = routing.get("overreach_explanation") or (
+    def _overreach_message(self, player_action: str, routing: Routing) -> str:
+        explanation = routing.overreach_explanation or (
             "World events are the DM's domain, not the player's."
         )
         return (
@@ -234,21 +241,25 @@ class DMAgent:
             "Tell me what YOUR character does. The world will respond."
         )
 
-    def _roll_interjection(self, interjection: dict) -> dict | None:
-        score = interjection.get("unpredictability_score") or 0
-        description = interjection.get("description")
-        if score < 12 or not description:
+    def _roll_interjection(self, interjection: Interjection) -> dict[str, Any] | None:
+        score = interjection.unpredictability_score
+        if score < 12 or not interjection.description:
             return None
         if _rng.random() < interjection_probability(score):
-            return {"type": interjection.get("type"), "description": description, "score": score}
+            return {
+                "type": interjection.type,
+                "description": interjection.description,
+                "score": score,
+            }
         return None
 
-    def run_turn(self, player_action: str) -> str:
+    async def run_turn(self, player_action: str) -> str:
         ws = self.ws
+        calls = llm.start_trace()
 
         # --- Call 1: route (BEFORE the transaction, so overreach writes nothing) --
-        routing = route(player_action, ws)
-        if routing.get("overreach_detected"):
+        routing = await route(player_action, ws)
+        if routing.overreach_detected:
             self.last_trace = {
                 "agents": ["DM · route"],
                 "overreach": True,
@@ -258,6 +269,7 @@ class DMAgent:
                 "interjection": {"score": None, "fired": False},
                 "events": [],
                 "npc": None,
+                "calls": [asdict(c) for c in calls],
             }
             return self._overreach_message(player_action, routing)
 
@@ -265,10 +277,10 @@ class DMAgent:
         try:
             # --- NPC: load existing or create new (no dialogue yet) -----------
             npc_ctx = None
-            if routing.get("npc_involved") and routing.get("npc_reference"):
-                npc_ctx = npc_agent.ensure_npc(
-                    routing["npc_reference"],
-                    routing.get("scene_note", ""),
+            if routing.npc_involved and routing.npc_reference:
+                npc_ctx = await npc_agent.ensure_npc(
+                    routing.npc_reference,
+                    routing.scene_note,
                     ws,
                     active_npc=ws.get_field("session.active_npc"),
                 )
@@ -276,12 +288,8 @@ class DMAgent:
             # --- Pull the world knowledge the verdict needs -------------------
             # The main quest is ALWAYS injected so Resolution can link a discovery
             # to quest activation/advancement, regardless of what route() requested.
-            knowledge_parts = [foundry.get_main_quest()]
-            topics = [t for t in (routing.get("knowledge_topics") or []) if t != "quest"]
-            if topics:
-                extra = foundry.query_world_knowledge(player_action, topics=topics)
-                if extra:
-                    knowledge_parts.append(extra)
+            topics = [t for t in routing.knowledge_topics if t != "quest"]
+            knowledge_parts = [lore.get_main_quest(), lore.query_world_knowledge(topics)]
             knowledge = "\n\n---\n\n".join(p for p in knowledge_parts if p)
 
             # --- Resolution: numeric view (+ the involved NPC's numbers) -------
@@ -293,35 +301,35 @@ class DMAgent:
                     "disposition_points": st.get("disposition_points"),
                     "disposition": st.get("disposition_toward_player"),
                 }
-            verdict = resolution_agent.resolve(
+            verdict = await resolution_agent.resolve(
                 player_action=player_action,
                 routing=routing,
                 world_fields=res_fields,
                 npc_stance=npc_ctx["stance"] if npc_ctx else None,
                 world_knowledge=knowledge,
             )
-            events = ws.apply_delta(verdict.get("state_delta") or {})
+            events = ws.apply_delta(verdict.state_delta.model_dump(exclude_none=True))
 
             # --- Interjection: orchestrator rolls the capped probability ------
-            interjection = self._roll_interjection(verdict.get("interjection") or {})
+            interjection = self._roll_interjection(verdict.interjection)
 
             # --- NPC render: voice the reaction (labels only — strip numbers) -
             npc_reply = None
             if npc_ctx:
                 sheet = copy.deepcopy(npc_ctx["sheet"])
                 sheet["state"].pop("disposition_points", None)
-                npc_reply = npc_agent.render(
-                    sheet, verdict, routing.get("scene_note", ""), player_action
+                npc_reply = await npc_agent.render(
+                    sheet, verdict, routing.scene_note, player_action
                 )
 
             # --- Call 2: narrate ----------------------------------------------
-            prose = narrate(player_action, verdict, npc_reply, events, interjection, ws)
+            prose = await narrate(player_action, verdict, npc_reply, events, interjection, ws)
 
             # --- Session continuity, then commit the turn ---------------------
             ws.increment_turn()
             session_update = {
-                "current_scene": routing.get("scene_note", ws.get_field("session.current_scene")),
-                "last_scene_summary": verdict.get("narration_seed", ""),
+                "current_scene": routing.scene_note or ws.get_field("session.current_scene"),
+                "last_scene_summary": verdict.narration_seed,
             }
             if npc_ctx:  # remember who the player is talking to, for next turn's pronouns
                 session_update["active_npc"] = npc_ctx["sheet"]["profile"].get("name", "")
@@ -343,17 +351,18 @@ class DMAgent:
             self.last_trace = {
                 "agents": agents_fired,
                 "overreach": False,
-                "tier": verdict.get("consequence_tier"),
-                "buckets": [
-                    f"{b.get('bucket')}/{b.get('intent')}" for b in (verdict.get("buckets") or [])
-                ],
-                "momentum": verdict.get("momentum"),
+                "tier": verdict.consequence_tier,
+                "buckets": [f"{b.bucket}/{b.intent}" for b in verdict.buckets],
+                "momentum": verdict.momentum,
+                "rationale": verdict.rationale,
+                "suggested_actions": verdict.suggested_actions,
                 "interjection": {
-                    "score": (verdict.get("interjection") or {}).get("unpredictability_score"),
+                    "score": verdict.interjection.unpredictability_score,
                     "fired": interjection is not None,
                 },
                 "events": [e.get("type") for e in events],
                 "npc": npc_name,
+                "calls": [asdict(c) for c in calls],
             }
             return prose
 
