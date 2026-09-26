@@ -33,17 +33,22 @@ OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pipeline_run
 os.makedirs(OUT_DIR, exist_ok=True)
 SIM_MODEL = os.environ["AZURE_AI_MODEL_DEPLOYMENT"]
 CANONICAL_FLAGS = {
-    "drenhold_discovered", "ashen_seal_found", "ashwatch_post_investigated",
-    "survivor_rescued", "aldric_trust_unlocked",
+    "drenhold_discovered",
+    "ashen_seal_found",
+    "ashwatch_post_investigated",
+    "survivor_rescued",
+    "aldric_trust_unlocked",
 }
 N_TURNS = 75
 RELOAD_AT = 38
 CALLBACKS = {25, 50, 70}
 SEED = 99
 NAME, ROLE = "Edwyn Carr", "Warden"
-GOAL = ("investigate why Ashwatch Post went silent (the Shattered Seal): gather word in "
-        "Greyhold, talk to people, travel east into the Greymark, find and follow clues, "
-        "fight only when forced, and rest when worn down")
+GOAL = (
+    "investigate why Ashwatch Post went silent (the Shattered Seal): gather word in "
+    "Greyhold, talk to people, travel east into the Greymark, find and follow clues, "
+    "fight only when forced, and rest when worn down"
+)
 
 # --- telemetry capture --------------------------------------------------------
 CAP: dict = {}
@@ -78,7 +83,7 @@ npc_agent.ensure_npc = _w_ensure
 # --- goal-driven player simulator --------------------------------------------
 def simulate_player(ws: WorldState, last_narration: str) -> str:
     s = ws.get_state()
-    quests = [f"{q['title']}: {q.get('current_objective','')}" for q in s["quests"]["active"]]
+    quests = [f"{q['title']}: {q.get('current_objective', '')}" for q in s["quests"]["active"]]
     system = (
         f"You are role-playing the PLAYER, {NAME}, a {ROLE} in Thunorheim (grim Norse dark "
         "fantasy). Output ONE short in-character action in FIRST PERSON (1-2 sentences), "
@@ -114,14 +119,29 @@ def snapshot(ws: WorldState) -> dict:
     s = ws.get_state()
     p, prog = s["player"], s["progression"]
     return {
-        "turn": s["session"]["turn"], "hp": p["hp"], "health": p["health"],
-        "ep": p["energy_points"], "energy": p["energy"], "location": p["location"],
-        "xp": prog["xp"], "tier": prog["tier"], "title": prog["title"], "pending": prog["pending_tier"],
+        "turn": s["session"]["turn"],
+        "hp": p["hp"],
+        "health": p["health"],
+        "ep": p["energy_points"],
+        "energy": p["energy"],
+        "location": p["location"],
+        "xp": prog["xp"],
+        "tier": prog["tier"],
+        "title": prog["title"],
+        "pending": prog["pending_tier"],
         "inv": list(s["inventory"]),
-        "npcs": {n: (d["state"]["disposition_toward_player"], d["state"]["disposition_points"],
-                     bool(d["state"].get("last_interaction_summary"))) for n, d in s["npcs_met"].items()},
-        "quests": {q["title"]: (q.get("current_objective", ""), len(q.get("known_clues", [])))
-                   for q in s["quests"]["active"]},
+        "npcs": {
+            n: (
+                d["state"]["disposition_toward_player"],
+                d["state"]["disposition_points"],
+                bool(d["state"].get("last_interaction_summary")),
+            )
+            for n, d in s["npcs_met"].items()
+        },
+        "quests": {
+            q["title"]: (q.get("current_objective", ""), len(q.get("known_clues", [])))
+            for q in s["quests"]["active"]
+        },
         "done_quests": [q["title"] for q in s["quests"]["completed"]],
         "flags": sorted(k for k, v in s["world_flags"].items() if v),
         "rep": s["reputation"]["wardens_guild"],
@@ -137,31 +157,60 @@ def assert_turn(turn, kind, pre, post, prose, results):
         chk("turn_frozen_on_overreach", post["turn"] == pre["turn"] and post["hp"] == pre["hp"])
         return
     chk("turn_increment", post["turn"] == pre["turn"] + 1, f"{pre['turn']}->{post['turn']}")
-    chk("health_sync", 0 <= post["hp"] <= 100 and derive_health(post["hp"]) == post["health"]
-        and 0 <= post["ep"] <= 100 and derive_energy(post["ep"]) == post["energy"],
-        f"hp{post['hp']}={post['health']} ep{post['ep']}={post['energy']}")
-    chk("npc_integrity",
-        all(-100 <= dp <= 100 and derive_disposition(dp) == lbl for lbl, dp, _ in post["npcs"].values())
+    chk(
+        "health_sync",
+        0 <= post["hp"] <= 100
+        and derive_health(post["hp"]) == post["health"]
+        and 0 <= post["ep"] <= 100
+        and derive_energy(post["ep"]) == post["energy"],
+        f"hp{post['hp']}={post['health']} ep{post['ep']}={post['energy']}",
+    )
+    chk(
+        "npc_integrity",
+        all(
+            -100 <= dp <= 100 and derive_disposition(dp) == lbl
+            for lbl, dp, _ in post["npcs"].values()
+        )
         and len(post["npcs"]) >= len(pre["npcs"]),
-        f"{len(post['npcs'])} npcs")
+        f"{len(post['npcs'])} npcs",
+    )
     chk("canonical_flags", set(post["flags"]) <= CANONICAL_FLAGS, str(post["flags"]))
-    chk("progression", 1 <= post["tier"] <= 6 and post["title"] == title_for(ROLE, post["tier"])
-        and post["xp"] >= pre["xp"] and (post["pending"] is None or post["pending"] > post["tier"]),
-        f"t{post['tier']} {post['title']} xp{post['xp']} pend{post['pending']}")
+    chk(
+        "progression",
+        1 <= post["tier"] <= 6
+        and post["title"] == title_for(ROLE, post["tier"])
+        and post["xp"] >= pre["xp"]
+        and (post["pending"] is None or post["pending"] > post["tier"]),
+        f"t{post['tier']} {post['title']} xp{post['xp']} pend{post['pending']}",
+    )
     # location must not silently reset to the start town once we've left it
     if pre["location"] not in ("Greyhold", "") and "greyhold" not in pre["location"].lower():
-        chk("location_no_reset", post["location"] != "Greyhold", f"{pre['location']} -> {post['location']}")
+        chk(
+            "location_no_reset",
+            post["location"] != "Greyhold",
+            f"{pre['location']} -> {post['location']}",
+        )
     # mundane talk must not drain energy
-    dom = ((CAP.get("verdict") or {}).get("buckets") or [{}])
-    is_social_only = dom and all(b.get("bucket") in ("Social", "Narrative Progression") for b in dom)
+    dom = (CAP.get("verdict") or {}).get("buckets") or [{}]
+    is_social_only = dom and all(
+        b.get("bucket") in ("Social", "Narrative Progression") for b in dom
+    )
     ed = ((CAP.get("verdict") or {}).get("state_delta") or {}).get("energy_delta") or 0
     if is_social_only:
-        chk("no_energy_drain_on_talk", ed >= 0, f"energy_delta={ed} buckets={[b.get('bucket') for b in dom]}")
+        chk(
+            "no_energy_drain_on_talk",
+            ed >= 0,
+            f"energy_delta={ed} buckets={[b.get('bucket') for b in dom]}",
+        )
     if kind == "callback":
         early = CAP.get("_callback_name")
-        chk("memory_callback_same_npc", CAP.get("npc_resolved") == early
-            and early in post["npcs"] and len(post["npcs"]) == len(pre["npcs"]),
-            f"resolved={CAP.get('npc_resolved')} expected={early}")
+        chk(
+            "memory_callback_same_npc",
+            CAP.get("npc_resolved") == early
+            and early in post["npcs"]
+            and len(post["npcs"]) == len(pre["npcs"]),
+            f"resolved={CAP.get('npc_resolved')} expected={early}",
+        )
 
 
 def main():
@@ -171,7 +220,9 @@ def main():
     ws = WorldState(tmp)
     ws.update_player(name=NAME, role=ROLE)
     ws.grant_starting_loadout(ROLE)
-    ws.update_session(current_scene=f"{NAME} the {ROLE} has just arrived in Greyhold, stepping into the Ashen Flagon.")
+    ws.update_session(
+        current_scene=f"{NAME} the {ROLE} has just arrived in Greyhold, stepping into the Ashen Flagon."
+    )
     ws.save_state()
     dm_agent.seed_interjections(SEED)
     dm = dm_agent.DMAgent(ws)
@@ -187,8 +238,10 @@ def main():
         if turn in CALLBACKS and met_order:
             kind = "callback"
             early = met_order[0]
-            action = (f"I seek out {early} again, reminding them of what passed between us before, "
-                      "and press them for anything new on the silent outposts.")
+            action = (
+                f"I seek out {early} again, reminding them of what passed between us before, "
+                "and press them for anything new on the silent outposts."
+            )
         else:
             action = simulate_player(ws, last)
 
@@ -214,10 +267,10 @@ def main():
             f"## Turn {turn}{tag}\n**Action:** {action}\n\n"
             f"**Verdict:** {v.get('consequence_tier')} | buckets="
             f"{[b.get('bucket') for b in (v.get('buckets') or [])]} | "
-            f"hp_d={ (v.get('state_delta') or {}).get('hp_delta') } "
-            f"e_d={ (v.get('state_delta') or {}).get('energy_delta') } "
-            f"xp_d={ (v.get('state_delta') or {}).get('xp_delta') } "
-            f"promote={ (v.get('state_delta') or {}).get('promote') }\n\n"
+            f"hp_d={(v.get('state_delta') or {}).get('hp_delta')} "
+            f"e_d={(v.get('state_delta') or {}).get('energy_delta')} "
+            f"xp_d={(v.get('state_delta') or {}).get('xp_delta')} "
+            f"promote={(v.get('state_delta') or {}).get('promote')}\n\n"
             f"{prose}\n\n"
             f"**State:** turn {post['turn']} | {post['health']}({post['hp']})/{post['energy']}({post['ep']}) "
             f"| {post['title']} t{post['tier']} xp{post['xp']} | @ {post['location']}\n"
@@ -225,8 +278,11 @@ def main():
             f"flags={post['flags']} rep={post['rep']}\n\n---\n"
         )
         last = prose
-        print(f"TURN {turn}/{N_TURNS} | {post['health']}/{post['energy']} t{post['tier']} "
-              f"xp{post['xp']} npcs={len(post['npcs'])} @ {post['location'][:40]}", flush=True)
+        print(
+            f"TURN {turn}/{N_TURNS} | {post['health']}/{post['energy']} t{post['tier']} "
+            f"xp{post['xp']} npcs={len(post['npcs'])} @ {post['location'][:40]}",
+            flush=True,
+        )
 
         if dm.game_over:
             transcript.append("\n**[GAME OVER — player died]**\n")
@@ -240,29 +296,44 @@ def main():
             ws_re = WorldState(tmp)
             after = ws_re.get_state()
             reload_ok = json.dumps(before, sort_keys=True) == json.dumps(after, sort_keys=True)
-            results.append((turn, "save_reload_deep_equal", reload_ok,
-                            "state identical after reload" if reload_ok else "MISMATCH"))
+            results.append(
+                (
+                    turn,
+                    "save_reload_deep_equal",
+                    reload_ok,
+                    "state identical after reload" if reload_ok else "MISMATCH",
+                )
+            )
             ws = ws_re
             dm = dm_agent.DMAgent(ws)  # fresh agent on reloaded state
-            transcript.append(f"\n**[SAVE/RELOAD at turn {turn} — deep-equal: {reload_ok}]**\n\n---\n")
+            transcript.append(
+                f"\n**[SAVE/RELOAD at turn {turn} — deep-equal: {reload_ok}]**\n\n---\n"
+            )
             print(f"SAVE/RELOAD deep-equal: {reload_ok}", flush=True)
 
     # summary
     fails = [r for r in results if not r[2]]
     final = snapshot(ws)
-    lines = ["PERSISTENCE TEST SUMMARY", "=" * 30,
-             f"Turns run: {final['turn']}",
-             f"Assertions: PASS={sum(1 for r in results if r[2])} FAIL={len(fails)}",
-             f"Save/reload deep-equal: {reload_ok}",
-             f"Final: {final['health']}({final['hp']})/{final['energy']}({final['ep']}) "
-             f"{final['title']} tier{final['tier']} xp{final['xp']} @ {final['location']}",
-             f"NPCs met ({len(final['npcs'])}): " + ", ".join(
-                 f"{n} {lbl}{('+' if pts>0 else '')}{pts}" for n, (lbl, pts, _) in final["npcs"].items()),
-             f"Active quests: {final['quests']}",
-             f"Completed quests: {final['done_quests']}",
-             f"World flags: {final['flags']}",
-             f"Guild reputation: {final['rep']}", "",
-             "FAILURES:" if fails else "FAILURES: (none)"]
+    lines = [
+        "PERSISTENCE TEST SUMMARY",
+        "=" * 30,
+        f"Turns run: {final['turn']}",
+        f"Assertions: PASS={sum(1 for r in results if r[2])} FAIL={len(fails)}",
+        f"Save/reload deep-equal: {reload_ok}",
+        f"Final: {final['health']}({final['hp']})/{final['energy']}({final['ep']}) "
+        f"{final['title']} tier{final['tier']} xp{final['xp']} @ {final['location']}",
+        f"NPCs met ({len(final['npcs'])}): "
+        + ", ".join(
+            f"{n} {lbl}{('+' if pts > 0 else '')}{pts}"
+            for n, (lbl, pts, _) in final["npcs"].items()
+        ),
+        f"Active quests: {final['quests']}",
+        f"Completed quests: {final['done_quests']}",
+        f"World flags: {final['flags']}",
+        f"Guild reputation: {final['rep']}",
+        "",
+        "FAILURES:" if fails else "FAILURES: (none)",
+    ]
     lines += [f"  turn {t}: {n} :: {d}" for t, n, ok, d in fails]
     summary = "\n".join(lines)
     with open(os.path.join(OUT_DIR, "persistence_summary.txt"), "w", encoding="utf-8") as fh:

@@ -134,7 +134,9 @@ def test_updates_for_unknown_npcs_are_ignored(ws):
 
 
 def test_npc_disposition_is_numeric_and_clamped(ws):
-    ws.create_npc("Torben Grall", {"name": "Torben Grall"}, {"disposition_toward_player": "Friendly"})
+    ws.create_npc(
+        "Torben Grall", {"name": "Torben Grall"}, {"disposition_toward_player": "Friendly"}
+    )
     assert ws.get_npc("Torben Grall")["state"]["disposition_points"] == 40
     ws.apply_delta({"npc_updates": {"Torben Grall": {"disposition_delta": 500}}})
     st = ws.get_npc("Torben Grall")["state"]

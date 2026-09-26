@@ -45,6 +45,7 @@ def interjection_probability(score: int) -> float:
 # --- Context views ------------------------------------------------------------
 # DM/NPC get labels only; Resolution gets the numbers.
 
+
 def _dm_fields(ws: WorldState) -> dict:
     s = ws.get_state()
     return {
@@ -61,7 +62,7 @@ def _dm_fields(ws: WorldState) -> dict:
 def _resolution_fields(ws: WorldState) -> dict:
     s = ws.get_state()
     return {
-        "player": s["player"],            # full, with hp + energy_points
+        "player": s["player"],  # full, with hp + energy_points
         "inventory": s["inventory"],
         "reputation": s["reputation"],
         "active_quests": s["quests"]["active"],
@@ -248,10 +249,16 @@ class DMAgent:
         # --- Call 1: route (BEFORE the transaction, so overreach writes nothing) --
         routing = route(player_action, ws)
         if routing.get("overreach_detected"):
-            self.last_trace = {"agents": ["DM · route"], "overreach": True,
-                               "tier": None, "buckets": [], "momentum": None,
-                               "interjection": {"score": None, "fired": False},
-                               "events": [], "npc": None}
+            self.last_trace = {
+                "agents": ["DM · route"],
+                "overreach": True,
+                "tier": None,
+                "buckets": [],
+                "momentum": None,
+                "interjection": {"score": None, "fired": False},
+                "events": [],
+                "npc": None,
+            }
             return self._overreach_message(player_action, routing)
 
         ws.begin_turn()
@@ -260,7 +267,9 @@ class DMAgent:
             npc_ctx = None
             if routing.get("npc_involved") and routing.get("npc_reference"):
                 npc_ctx = npc_agent.ensure_npc(
-                    routing["npc_reference"], routing.get("scene_note", ""), ws,
+                    routing["npc_reference"],
+                    routing.get("scene_note", ""),
+                    ws,
                     active_npc=ws.get_field("session.active_npc"),
                 )
 
@@ -335,8 +344,9 @@ class DMAgent:
                 "agents": agents_fired,
                 "overreach": False,
                 "tier": verdict.get("consequence_tier"),
-                "buckets": [f"{b.get('bucket')}/{b.get('intent')}"
-                            for b in (verdict.get("buckets") or [])],
+                "buckets": [
+                    f"{b.get('bucket')}/{b.get('intent')}" for b in (verdict.get("buckets") or [])
+                ],
                 "momentum": verdict.get("momentum"),
                 "interjection": {
                     "score": (verdict.get("interjection") or {}).get("unpredictability_score"),

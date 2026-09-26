@@ -27,10 +27,11 @@ def _openai_client():
     )
     return project.get_openai_client()
 
+
 _AGENT_NAMES = {
-    "dm":         "dm-agent",
+    "dm": "dm-agent",
     "resolution": "resolution-agent",
-    "npc":        "npc-agent",
+    "npc": "npc-agent",
 }
 _DEFAULT_AGENT = "dm-agent"
 
@@ -39,14 +40,16 @@ def _invoke(agent_name: str, system: str, user: str) -> str:
     """Invoke a named Foundry prompt agent via the Responses API."""
     client = _openai_client()
     conversation = client.conversations.create(
-        items=[{
-            "type": "message",
-            "role": "user",
-            "content": (
-                f"<system_instructions>\n{system}\n</system_instructions>\n\n"
-                f"<user_input>\n{user}\n</user_input>"
-            ),
-        }]
+        items=[
+            {
+                "type": "message",
+                "role": "user",
+                "content": (
+                    f"<system_instructions>\n{system}\n</system_instructions>\n\n"
+                    f"<user_input>\n{user}\n</user_input>"
+                ),
+            }
+        ]
     )
     response = client.responses.create(
         conversation=conversation.id,
@@ -85,5 +88,5 @@ def _parse_json(raw: str) -> dict:
     except json.JSONDecodeError:
         start, end = raw.find("{"), raw.rfind("}")
         if start != -1 and end != -1:
-            return json.loads(raw[start:end + 1])
+            return json.loads(raw[start : end + 1])
         raise

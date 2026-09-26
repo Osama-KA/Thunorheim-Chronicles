@@ -65,8 +65,10 @@ def main() -> None:
     if not ws.get_field("player.name"):
         create_character(ws)
     else:
-        print(f"  Welcome back, {ws.get_field('player.name')} "
-              f"the {ws.get_field('player.role')}. Turn {ws.get_field('session.turn')}.\n")
+        print(
+            f"  Welcome back, {ws.get_field('player.name')} "
+            f"the {ws.get_field('player.role')}. Turn {ws.get_field('session.turn')}.\n"
+        )
 
     opening_scene(ws)
 

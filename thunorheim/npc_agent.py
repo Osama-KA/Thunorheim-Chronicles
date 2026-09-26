@@ -23,22 +23,27 @@ from . import foundry, llm
 from .world_state import WorldState, coerce_disposition
 
 _LORE_NPCS = [
-    "Aldric Vane", "Maren Ashveld", "Torben Grall", "Signe", "Edric Fenn",
-    "Bram Ashford", "Lysa Vorn", "Edda Voss", "Castor Veld", "Kael Dunmore",
+    "Aldric Vane",
+    "Maren Ashveld",
+    "Torben Grall",
+    "Signe",
+    "Edric Fenn",
+    "Bram Ashford",
+    "Lysa Vorn",
+    "Edda Voss",
+    "Castor Veld",
+    "Kael Dunmore",
 ]
 
 
-def ensure_npc(reference: str, situation: str, ws: WorldState,
-               active_npc: str = "") -> dict:
+def ensure_npc(reference: str, situation: str, ws: WorldState, active_npc: str = "") -> dict:
     """Resolve, load-or-create, and return {sheet, stance, created}.
 
     `active_npc` is the canonical name of the character the player is currently in
     conversation with (from the previous turn). It anchors ambiguous references so a
     bare pronoun doesn't jump to the wrong character."""
     met = {name: ws.get_npc(name)["profile"] for name in ws.get_state()["npcs_met"]}
-    lore = foundry.query_world_knowledge(
-        reference, topics=["location", "companions", "factions"]
-    )
+    lore = foundry.query_world_knowledge(reference, topics=["location", "companions", "factions"])
     templates = foundry.get_npc_templates()
 
     system = (

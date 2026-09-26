@@ -18,13 +18,19 @@ from thunorheim.world_state import WorldState
 
 SCRIPT = [
     # (label, action)
-    ("Social / new-NPC pipeline (bartender -> Maren)",
-     "I walk up to the bartender and ask what she knows about the outposts going silent."),
-    ("Exploration (find the formation tracks)",
-     "I leave town through the Greywall Gate and head east down the road toward "
-     "Ashwatch Post, watching the ground for tracks."),
-    ("Combat (Greywalker — valid player action)",
- "I draw my blade and scan the grey scrub ahead, ready for whatever is moving in there."),
+    (
+        "Social / new-NPC pipeline (bartender -> Maren)",
+        "I walk up to the bartender and ask what she knows about the outposts going silent.",
+    ),
+    (
+        "Exploration (find the formation tracks)",
+        "I leave town through the Greywall Gate and head east down the road toward "
+        "Ashwatch Post, watching the ground for tracks.",
+    ),
+    (
+        "Combat (Greywalker — valid player action)",
+        "I draw my blade and scan the grey scrub ahead, ready for whatever is moving in there.",
+    ),
 ]
 
 

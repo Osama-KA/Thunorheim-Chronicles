@@ -26,15 +26,15 @@ _KB_DIR = os.path.join(_PROJECT_ROOT, "knowledge-base")
 # Topic -> source document filenames in the search index.
 # These match metadata_storage_path values returned by Azure AI Search.
 _TOPIC_DOCS = {
-    "world":      ["world_summary.md"],
-    "location":   ["starting_location.md"],
-    "quest":      ["main_quest.md"],
+    "world": ["world_summary.md"],
+    "location": ["starting_location.md"],
+    "quest": ["main_quest.md"],
     "companions": ["party_profiles.md"],
-    "party":      ["party_profiles.md"],
-    "factions":   ["factions.md"],
-    "artifact":   ["artifact.md"],
-    "monster":    ["monster.md"],
-    "creature":   ["monster.md"],
+    "party": ["party_profiles.md"],
+    "factions": ["factions.md"],
+    "artifact": ["artifact.md"],
+    "monster": ["monster.md"],
+    "creature": ["monster.md"],
 }
 
 

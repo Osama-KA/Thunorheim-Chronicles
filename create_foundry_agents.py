@@ -13,9 +13,18 @@ project = AIProjectClient(
 )
 
 agents = [
-    ("dm-agent", "You are the DM Agent for Thunorheim — orchestrator, intent classifier, and narrator. You drive the turn pipeline and are the only thing the player ever sees."),
-    ("resolution-agent", "You are the Resolution Agent for Thunorheim — the logic engine. You evaluate actions through seven-bucket rules using honest logical reasoning. There are no dice."),
-    ("npc-agent", "You are the NPC Agent for Thunorheim — the consistency layer. You resolve character references, load or create NPC sheets, and voice characters in-character after verdicts are issued."),
+    (
+        "dm-agent",
+        "You are the DM Agent for Thunorheim — orchestrator, intent classifier, and narrator. You drive the turn pipeline and are the only thing the player ever sees.",
+    ),
+    (
+        "resolution-agent",
+        "You are the Resolution Agent for Thunorheim — the logic engine. You evaluate actions through seven-bucket rules using honest logical reasoning. There are no dice.",
+    ),
+    (
+        "npc-agent",
+        "You are the NPC Agent for Thunorheim — the consistency layer. You resolve character references, load or create NPC sheets, and voice characters in-character after verdicts are issued.",
+    ),
 ]
 
 for name, instructions in agents:
