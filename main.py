@@ -7,6 +7,7 @@ persists in state/session_state.json between turns and between sessions.
 
 from __future__ import annotations
 
+import contextlib
 import sys
 
 from thunorheim.dm_agent import DMAgent
@@ -14,10 +15,8 @@ from thunorheim.world_state import ROLES, WorldState
 
 # Model prose can contain characters outside the Windows console codepage; keep the
 # CLI from crashing on them.
-try:
+with contextlib.suppress(AttributeError, ValueError):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-except (AttributeError, ValueError):
-    pass
 
 BANNER = r"""
 =========================================================

@@ -12,7 +12,7 @@ are baked into agent prompts and don't need search.
 from __future__ import annotations
 
 import os
-from functools import lru_cache
+from functools import cache
 
 from azure.core.credentials import AzureKeyCredential
 from azure.search.documents import SearchClient
@@ -69,11 +69,11 @@ def _format_results(results: list[dict]) -> str:
     return "\n\n---\n\n".join(parts)
 
 
-@lru_cache(maxsize=None)
+@cache
 def _read_local(filename: str) -> str:
     """Read a local knowledge-base file. Used for rules and templates only."""
     path = os.path.join(_KB_DIR, filename)
-    with open(path, "r", encoding="utf-8") as fh:
+    with open(path, encoding="utf-8") as fh:
         return fh.read()
 
 

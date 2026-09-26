@@ -12,7 +12,6 @@ Run: uv run python evals/persistence.py
 
 from __future__ import annotations
 
-import copy
 import json
 import os
 import tempfile
@@ -23,7 +22,11 @@ import thunorheim.llm as llm
 import thunorheim.npc_agent as npc_agent
 import thunorheim.resolution_agent as resolution_agent
 from thunorheim.world_state import (
-    WorldState, derive_health, derive_energy, derive_disposition, title_for,
+    WorldState,
+    derive_disposition,
+    derive_energy,
+    derive_health,
+    title_for,
 )
 
 OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pipeline_runs")
@@ -50,11 +53,15 @@ _orig_ensure = npc_agent.ensure_npc
 
 
 def _w_route(*a, **k):
-    r = _orig_route(*a, **k); CAP["routing"] = r; return r
+    r = _orig_route(*a, **k)
+    CAP["routing"] = r
+    return r
 
 
 def _w_resolve(*a, **k):
-    v = _orig_resolve(*a, **k); CAP["verdict"] = v; return v
+    v = _orig_resolve(*a, **k)
+    CAP["verdict"] = v
+    return v
 
 
 def _w_ensure(*a, **k):
@@ -104,7 +111,8 @@ def simulate_player(ws: WorldState, last_narration: str) -> str:
 
 # --- snapshot + assertions ----------------------------------------------------
 def snapshot(ws: WorldState) -> dict:
-    s = ws.get_state(); p, prog = s["player"], s["progression"]
+    s = ws.get_state()
+    p, prog = s["player"], s["progression"]
     return {
         "turn": s["session"]["turn"], "hp": p["hp"], "health": p["health"],
         "ep": p["energy_points"], "energy": p["energy"], "location": p["location"],
@@ -170,7 +178,6 @@ def main():
 
     transcript = [f"# Persistence run — {NAME} the {ROLE}, {N_TURNS} turns\n"]
     results: list = []
-    events: list = []
     met_order: list = []
     last = ws.get_field("session.current_scene")
     reload_ok = None
@@ -180,7 +187,6 @@ def main():
         if turn in CALLBACKS and met_order:
             kind = "callback"
             early = met_order[0]
-            CAP_pre_name = early
             action = (f"I seek out {early} again, reminding them of what passed between us before, "
                       "and press them for anything new on the silent outposts.")
         else:

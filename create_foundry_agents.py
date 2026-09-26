@@ -1,7 +1,8 @@
 import os
-from azure.identity import DefaultAzureCredential
+
 from azure.ai.projects import AIProjectClient
 from azure.ai.projects.models import PromptAgentDefinition
+from azure.identity import DefaultAzureCredential
 from dotenv import load_dotenv
 
 load_dotenv()

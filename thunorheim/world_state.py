@@ -178,7 +178,7 @@ class WorldState:
     # ------------------------------------------------------------------ load/save
     def _load(self) -> dict:
         if os.path.exists(self.path):
-            with open(self.path, "r", encoding="utf-8") as fh:
+            with open(self.path, encoding="utf-8") as fh:
                 text = fh.read().strip()
             if text:
                 return json.loads(text)

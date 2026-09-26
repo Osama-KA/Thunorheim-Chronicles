@@ -21,7 +21,11 @@ import thunorheim.llm as llm
 import thunorheim.npc_agent as npc_agent
 import thunorheim.resolution_agent as resolution_agent
 from thunorheim.world_state import (
-    WorldState, derive_health, derive_energy, derive_disposition, title_for,
+    WorldState,
+    derive_disposition,
+    derive_energy,
+    derive_health,
+    title_for,
 )
 
 OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pipeline_runs")
@@ -236,7 +240,7 @@ def fmt_turn(turn, kind, action, prose, post):
             f"**Interjection score:** {ij.get('unpredictability_score')}",
         ]
     lines += [
-        "", f"**DM narration:**", prose, "",
+        "", "**DM narration:**", prose, "",
         f"**State after:** turn {post['turn']} | {post['health']}({post['hp']})/{post['energy']}({post['ep']}) "
         f"| {post['title']} t{post['tier']} xp{post['xp']} pend{post['pending_tier']} | @ {post['location']}",
         f"  npcs={post['npcs']}",
