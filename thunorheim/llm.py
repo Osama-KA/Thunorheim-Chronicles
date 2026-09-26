@@ -276,11 +276,16 @@ async def _complete(
                         span.retries += 1
                         await asyncio.sleep(_backoff(attempt))
                     continue
+                content = resp.choices[0].message.content if resp.choices else None
+                if not content:
+                    # thinking models can spend the whole reply on hidden reasoning
+                    span.errors.append(f"{provider.name}: empty reply")
+                    break
                 span.provider, span.model, span.ok = provider.name, model, True
                 if resp.usage:
                     span.tokens_in = resp.usage.prompt_tokens
                     span.tokens_out = resp.usage.completion_tokens
-                return resp.choices[0].message.content or ""
+                return content
         raise AllProvidersFailed(f"{role}: {'; '.join(span.errors)}")
     finally:
         _finish(span, t0)
@@ -356,6 +361,9 @@ async def stream(role: str, system: str, user: str, *, prompt: str) -> AsyncIter
                 span.errors.append(f"{provider.name}: {type(err).__name__}")
                 if started:
                     yield RESET
+                continue
+            if not started:
+                span.errors.append(f"{provider.name}: empty reply")
                 continue
             span.provider, span.model, span.ok = provider.name, model, True
             return

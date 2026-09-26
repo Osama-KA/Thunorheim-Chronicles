@@ -172,6 +172,14 @@ def test_a_transient_error_retries_the_same_provider_once(script):
     assert (span.provider, span.retries) == ("a", 1)
 
 
+def test_an_empty_reply_fails_over_instead_of_passing_as_an_answer(script):
+    script.add("a.test", completion(""))
+    script.add("b.test", completion('{"n": 5}'))
+    out, [span] = traced(structured)
+    assert out.n == 5
+    assert span.errors == ["a: empty reply"]
+
+
 def test_when_every_provider_fails_the_call_fails(script):
     script.add("a.test", error(429))
     script.add("b.test", error(500), httpx.ReadTimeout("slow"))
@@ -209,6 +217,14 @@ def test_a_stream_yields_deltas_and_time_to_first_token(script):
     chunks, [span] = traced(stream_all())
     assert chunks == ["The wind ", "turns."]
     assert span.ok and span.ttft_ms is not None
+
+
+def test_an_empty_stream_fails_over(script):
+    script.add("a.test", sse())
+    script.add("b.test", sse("Fog."))
+    chunks, [span] = traced(stream_all())
+    assert chunks == ["Fog."]
+    assert (span.provider, span.errors) == ("b", ["a: empty reply"])
 
 
 def test_a_dropped_stream_resets_instead_of_splicing(script):
