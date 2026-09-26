@@ -29,12 +29,14 @@ stream_usage = true
 base_url = "https://integrate.api.nvidia.com/v1"
 key_env = "NVIDIA_API_KEY"
 use = "dev"
-json = "none"
-stream_usage = false
+json = "object"
+stream_usage = true
 
+# Defaults verified live 2026-09-27; the P3 bake-off picks the narrator.
+# Groq's free tier (~8k tokens/min) can't take a Resolution prompt, so resolve skips it.
 [roles]
-route = ["groq:openai/gpt-oss-20b", "gemini:gemini-2.5-flash-lite"]
-resolve = ["gemini:gemini-2.5-flash", "nvidia:openai/gpt-oss-120b"]
-npc = ["gemini:gemini-2.5-flash-lite", "nvidia:openai/gpt-oss-120b"]
-narrate = ["gemini:gemini-2.5-flash", "groq:openai/gpt-oss-120b"]
-sim = ["nvidia:openai/gpt-oss-120b", "gemini:gemini-2.5-flash-lite"]  # AI player for evals
+route = ["groq:qwen/qwen3.8-27b", "gemini:gemini-3.5-flash-lite", "nvidia:nvidia/nemotron-3-super-120b-a12b"]
+resolve = ["gemini:gemini-3.5-flash", "nvidia:nvidia/nemotron-3-super-120b-a12b", "gemini:gemini-3.5-flash-lite"]
+npc = ["gemini:gemini-3.5-flash-lite", "groq:openai/gpt-oss-120b", "nvidia:nvidia/nemotron-3-super-120b-a12b"]
+narrate = ["groq:openai/gpt-oss-120b", "gemini:gemini-3.5-flash-lite", "nvidia:nvidia/nemotron-3-super-120b-a12b"]
+sim = ["nvidia:nvidia/nemotron-3-super-120b-a12b", "groq:openai/gpt-oss-20b"]  # AI player for evals
