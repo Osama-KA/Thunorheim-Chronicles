@@ -5,7 +5,7 @@ state/session_state.json) and prints the narration plus a state snapshot after
 each turn. Useful for demos and as a regression check that the four-agent loop
 still works end to end.
 
-    python playtest.py
+    uv run python evals/smoke.py
 """
 
 from __future__ import annotations
@@ -13,8 +13,8 @@ from __future__ import annotations
 import os
 import tempfile
 
-from agents.dm_agent import DMAgent
-from agents.world_state import WorldState
+from thunorheim.dm_agent import DMAgent
+from thunorheim.world_state import WorldState
 
 SCRIPT = [
     # (label, action)

@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import sys
 
-from agents.dm_agent import DMAgent
-from agents.world_state import ROLES, WorldState
+from thunorheim.dm_agent import DMAgent
+from thunorheim.world_state import ROLES, WorldState
 
 # Model prose can contain characters outside the Windows console codepage; keep the
 # CLI from crashing on them.

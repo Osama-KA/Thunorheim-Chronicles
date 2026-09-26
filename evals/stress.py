@@ -7,7 +7,7 @@ turns to stress the Resolution Agent. Per-turn telemetry is captured via harness
 side wrappers (no source edits), automated assertions run every turn, and a
 transcript + assertion summary are written to pipeline_runs/.
 
-Run: .venv/Scripts/python.exe pipeline_test.py
+Run: uv run python evals/stress.py
 """
 
 from __future__ import annotations
@@ -16,11 +16,11 @@ import os
 import tempfile
 import traceback
 
-import agents.dm_agent as dm_agent
-import agents.llm as llm
-import agents.npc_agent as npc_agent
-import agents.resolution_agent as resolution_agent
-from agents.world_state import (
+import thunorheim.dm_agent as dm_agent
+import thunorheim.llm as llm
+import thunorheim.npc_agent as npc_agent
+import thunorheim.resolution_agent as resolution_agent
+from thunorheim.world_state import (
     WorldState, derive_health, derive_energy, derive_disposition, title_for,
 )
 

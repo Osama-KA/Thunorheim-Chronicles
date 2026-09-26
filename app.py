@@ -19,8 +19,8 @@ import re
 
 import streamlit as st
 
-from agents.dm_agent import DMAgent
-from agents.world_state import ROLES, WorldState, _DEFAULT_STATE
+from thunorheim.dm_agent import DMAgent
+from thunorheim.world_state import ROLES, WorldState, _DEFAULT_STATE
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SAVE_PATH = WorldState().path  # default state/session_state.json

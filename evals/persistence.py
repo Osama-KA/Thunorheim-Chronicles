@@ -7,7 +7,7 @@ persistence), and at a few points we deliberately return to an early NPC (memory
 callbacks). Per-turn persistence assertions run throughout; a transcript and a
 persistence summary are written to pipeline_runs/.
 
-Run: .venv/Scripts/python.exe persistence_test.py
+Run: uv run python evals/persistence.py
 """
 
 from __future__ import annotations
@@ -18,11 +18,11 @@ import os
 import tempfile
 import traceback
 
-import agents.dm_agent as dm_agent
-import agents.llm as llm
-import agents.npc_agent as npc_agent
-import agents.resolution_agent as resolution_agent
-from agents.world_state import (
+import thunorheim.dm_agent as dm_agent
+import thunorheim.llm as llm
+import thunorheim.npc_agent as npc_agent
+import thunorheim.resolution_agent as resolution_agent
+from thunorheim.world_state import (
     WorldState, derive_health, derive_energy, derive_disposition, title_for,
 )
 
