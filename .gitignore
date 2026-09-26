@@ -29,3 +29,6 @@ test_search.py
 Thumbs.db
 .vscode/
 .idea/
+
+# Local planning notes
+PLAN_POINTS.md
