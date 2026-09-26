@@ -7,6 +7,7 @@ Foundry portal with full traces.
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 
@@ -16,11 +17,15 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-_project = AIProjectClient(
-    endpoint=os.environ["AZURE_AI_PROJECT_ENDPOINT"],
-    credential=DefaultAzureCredential(),
-)
-_client = _project.get_openai_client()
+
+@functools.cache
+def _openai_client():
+    """Built on first use, so importing the engine needs no credentials (tests, CI)."""
+    project = AIProjectClient(
+        endpoint=os.environ["AZURE_AI_PROJECT_ENDPOINT"],
+        credential=DefaultAzureCredential(),
+    )
+    return project.get_openai_client()
 
 _AGENT_NAMES = {
     "dm":         "dm-agent",
@@ -32,7 +37,8 @@ _DEFAULT_AGENT = "dm-agent"
 
 def _invoke(agent_name: str, system: str, user: str) -> str:
     """Invoke a named Foundry prompt agent via the Responses API."""
-    conversation = _client.conversations.create(
+    client = _openai_client()
+    conversation = client.conversations.create(
         items=[{
             "type": "message",
             "role": "user",
@@ -42,7 +48,7 @@ def _invoke(agent_name: str, system: str, user: str) -> str:
             ),
         }]
     )
-    response = _client.responses.create(
+    response = client.responses.create(
         conversation=conversation.id,
         extra_body={"agent_reference": {"name": agent_name, "type": "agent_reference"}},
     )

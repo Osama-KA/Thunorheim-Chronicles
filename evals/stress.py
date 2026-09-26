@@ -88,7 +88,7 @@ def simulate_player(role: str, theme: str, scene: str, last_narration: str) -> s
     user = f"CURRENT SCENE: {scene}\n\nWHAT JUST HAPPENED (DM):\n{last_narration}\n\nYour next action:"
     for attempt in range(3):
         try:
-            r = llm._client.chat.completions.create(
+            r = llm._openai_client().chat.completions.create(
                 model=SIM_MODEL,
                 messages=[{"role": "system", "content": system},
                           {"role": "user", "content": user}],

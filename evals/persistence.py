@@ -89,7 +89,7 @@ def simulate_player(ws: WorldState, last_narration: str) -> str:
     )
     for attempt in range(3):
         try:
-            r = llm._client.chat.completions.create(
+            r = llm._openai_client().chat.completions.create(
                 model=SIM_MODEL,
                 messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
             )
