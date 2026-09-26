@@ -67,13 +67,10 @@ def chat(system: str, user: str, json_mode: bool = False, caller: str | None = N
 def chat_json(system: str, user: str, caller: str | None = None) -> dict:
     """Chat that must return JSON. Tolerates markdown fences; retries once if the
     model returns malformed JSON, so a rare bad emission doesn't cost a whole turn."""
-    for attempt in range(2):
-        raw = chat(system, user, caller=caller)
-        try:
-            return _parse_json(raw)
-        except (json.JSONDecodeError, ValueError):
-            if attempt == 1:
-                raise
+    try:
+        return _parse_json(chat(system, user, caller=caller))
+    except (json.JSONDecodeError, ValueError):
+        return _parse_json(chat(system, user, caller=caller))
 
 
 def _parse_json(raw: str) -> dict:

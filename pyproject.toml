@@ -15,7 +15,11 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest>=8.4", "ruff>=0.13"]
+dev = [
+    "mypy>=2.3.1",
+    "pytest>=8.4",
+    "ruff>=0.13",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -31,3 +35,7 @@ ignore = ["E501"]  # the formatter owns line length; long prompt strings are fin
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.13"
+files = ["thunorheim", "tests", "main.py", "app.py"]

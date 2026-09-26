@@ -48,11 +48,7 @@ def _get_search_client() -> SearchClient:
 
 def _search(query: str, top: int = 5, filter_expr: str | None = None) -> list[dict]:
     """Run a search query and return raw result dicts."""
-    client = _get_search_client()
-    kwargs = {"top": top}
-    if filter_expr:
-        kwargs["filter"] = filter_expr
-    results = client.search(query, **kwargs)
+    results = _get_search_client().search(query, top=top, filter=filter_expr)
     return [dict(r) for r in results]
 
 
@@ -115,9 +111,7 @@ def query_world_knowledge(query: str, topics: list[str] | None = None) -> str:
             for topic in topics:
                 target_files.extend(_TOPIC_DOCS.get(topic, []))
 
-            # De-dup preserving order
-            seen: set[str] = set()
-            ordered = [f for f in target_files if not (f in seen or seen.add(f))]
+            ordered = list(dict.fromkeys(target_files))  # de-dup, keep order
 
             if not ordered:
                 # Topics given but none mapped — fall back to free search
