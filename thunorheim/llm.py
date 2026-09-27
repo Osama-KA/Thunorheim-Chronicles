@@ -44,6 +44,15 @@ class AllProvidersFailed(RuntimeError):
 
 
 @dataclass
+class Attempt:
+    provider: str
+    model: str
+    outcome: str  # "ok", "429", "empty reply", "incomplete (length)", "APITimeoutError", ...
+    tokens_in: int | None = None  # None: the provider didn't report usage, not zero
+    tokens_out: int | None = None
+
+
+@dataclass
 class Span:
     role: str
     prompt: str
@@ -51,11 +60,21 @@ class Span:
     model: str = ""
     ms: int = 0
     ttft_ms: int | None = None
-    tokens_in: int | None = None
+    tokens_in: int | None = None  # totals over every attempt that reported usage
     tokens_out: int | None = None
     retries: int = 0
     errors: list[str] = field(default_factory=list)
+    attempts: list[Attempt] = field(default_factory=list)
     ok: bool = False
+
+    def attempt(self, provider: Provider, model: str, outcome: str, usage: Any = None) -> None:
+        tokens_in = usage.prompt_tokens if usage else None
+        tokens_out = usage.completion_tokens if usage else None
+        self.attempts.append(Attempt(provider.name, model, outcome, tokens_in, tokens_out))
+        if outcome == "ok":
+            self.provider, self.model, self.ok = provider.name, model, True
+        else:
+            self.errors.append(f"{provider.name}: {outcome}")
 
 
 _trace: contextvars.ContextVar[list[Span] | None] = contextvars.ContextVar("trace", default=None)
@@ -70,6 +89,10 @@ def start_trace() -> list[Span]:
 
 def _finish(span: Span, t0: float) -> None:
     span.ms = round((time.perf_counter() - t0) * 1000)
+    known_in = [a.tokens_in for a in span.attempts if a.tokens_in is not None]
+    known_out = [a.tokens_out for a in span.attempts if a.tokens_out is not None]
+    span.tokens_in = sum(known_in) if known_in else None
+    span.tokens_out = sum(known_out) if known_out else None
     spans = _trace.get()
     if spans is not None:
         spans.append(span)
@@ -79,34 +102,44 @@ def _finish(span: Span, t0: float) -> None:
 
 
 @cache
-def _recordings(path: Path) -> dict[str, dict[str, Any]]:
-    if not path.exists():
-        return {}
-    lines = path.read_text(encoding="utf-8").splitlines()
-    return {e["key"]: e for e in map(json.loads, filter(None, lines))}
+def _recordings(path: Path) -> dict[str, tuple[dict[str, Any], ...]]:
+    """Every recorded response per request key, in the order they happened."""
+    takes: dict[str, list[dict[str, Any]]] = {}
+    if path.exists():
+        for line in filter(None, path.read_text(encoding="utf-8").splitlines()):
+            entry = json.loads(line)
+            takes.setdefault(entry["key"], []).append(entry)
+    return {key: tuple(entries) for key, entries in takes.items()}
 
 
 class Cassette(httpx.AsyncBaseTransport):
     """Replays recorded model traffic; in record mode, forwards and saves it."""
 
     def __init__(
-        self, path: Path, *, record: bool, inner: httpx.AsyncBaseTransport | None = None
+        self,
+        path: Path,
+        *,
+        record: bool,
+        cursors: dict[str, int],
+        inner: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self.path = path
         self.record = record
+        self.cursors = cursors  # per session, so a repeated request replays its next take
         self.inner = inner or httpx.AsyncHTTPTransport()
-        self.entries = _recordings(path)
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         key = hashlib.sha256(request.url.host.encode() + request.content).hexdigest()[:20]
         if not self.record:
-            entry = self.entries.get(key)
-            if entry is None:
+            takes = _recordings(self.path).get(key, ())
+            n = self.cursors.get(key, 0)
+            if n >= len(takes):
                 # a 404, not an exception: the client would wrap an exception as a
                 # connection error, and the gateway would retry it as a blip
-                message = f"no recording {key} in {self.path}; re-record the scenario"
+                message = f"no recording {key} (take {n + 1}) in {self.path}; re-record"
                 return httpx.Response(404, json={"error": {"message": message}})
-            return self._response(entry)
+            self.cursors[key] = n + 1
+            return self._response(takes[n])
         response = await self.inner.handle_async_request(request)
         body = (await response.aread()).decode()
         entry = {
@@ -115,7 +148,6 @@ class Cassette(httpx.AsyncBaseTransport):
             "type": response.headers.get("content-type", ""),
             "body": body,
         }
-        self.entries[key] = entry
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(entry) + "\n")
@@ -148,6 +180,7 @@ class _Settings:
     transport: httpx.AsyncBaseTransport | None = None
     replay: Path | None = None
     record: Path | None = None
+    cursors: dict[str, int] = field(default_factory=dict)
 
 
 _settings = _Settings()
@@ -198,7 +231,9 @@ def _providers() -> dict[str, Provider]:
     record = _env_path(_settings.record, "THUNORHEIM_RECORD")
     transport = _settings.transport
     if replay or record:
-        transport = Cassette(replay or record, record=bool(record), inner=transport)  # type: ignore[arg-type]
+        path = replay or record
+        assert path is not None
+        transport = Cassette(path, record=bool(record), cursors=_settings.cursors, inner=transport)
 
     providers = {}
     for name, spec in _config()["providers"].items():
@@ -256,24 +291,26 @@ async def _complete(
                         response_format=fmt,
                     )
                 except openai.RateLimitError:
-                    span.errors.append(f"{provider.name}: 429")
+                    span.attempt(provider, model, "429")
                     break  # quota, not a blip: next provider
                 except TRANSIENT as err:
-                    span.errors.append(f"{provider.name}: {type(err).__name__}")
+                    span.attempt(provider, model, type(err).__name__)
                     if attempt == 0:
                         span.retries += 1
                         await asyncio.sleep(_backoff(attempt))
                     continue
-                content = resp.choices[0].message.content if resp.choices else None
-                if not content:
-                    # thinking models can spend the whole reply on hidden reasoning
-                    span.errors.append(f"{provider.name}: empty reply")
+                choice = resp.choices[0] if resp.choices else None
+                if choice is None or choice.finish_reason != "stop":
+                    # cut off (length) or filtered: a partial answer is not an answer
+                    reason = choice.finish_reason if choice else "no choice"
+                    span.attempt(provider, model, f"incomplete ({reason})", resp.usage)
                     break
-                span.provider, span.model, span.ok = provider.name, model, True
-                if resp.usage:
-                    span.tokens_in = resp.usage.prompt_tokens
-                    span.tokens_out = resp.usage.completion_tokens
-                return content
+                if not choice.message.content:
+                    # thinking models can spend the whole reply on hidden reasoning
+                    span.attempt(provider, model, "empty reply", resp.usage)
+                    break
+                span.attempt(provider, model, "ok", resp.usage)
+                return choice.message.content
         raise AllProvidersFailed(f"{role}: {'; '.join(span.errors)}")
     finally:
         _finish(span, t0)
@@ -323,7 +360,7 @@ async def stream(role: str, system: str, user: str, *, prompt: str) -> AsyncIter
     span, t0 = Span(role, prompt), time.perf_counter()
     try:
         for provider, model in _chain(role):
-            started = False
+            started, finish, used = False, None, None
             usage: ChatCompletionStreamOptionsParam | Omit = omit
             if provider.stream_usage:
                 usage = {"include_usage": True}
@@ -335,25 +372,30 @@ async def stream(role: str, system: str, user: str, *, prompt: str) -> AsyncIter
                     stream_options=usage,
                 )
                 async for chunk in resp:
-                    delta = chunk.choices[0].delta.content if chunk.choices else None
-                    if delta:
+                    choice = chunk.choices[0] if chunk.choices else None
+                    if choice and choice.delta.content:
                         if not started:
                             span.ttft_ms = round((time.perf_counter() - t0) * 1000)
                             started = True
-                        yield delta
-                    if chunk.usage:
-                        span.tokens_in = chunk.usage.prompt_tokens
-                        span.tokens_out = chunk.usage.completion_tokens
+                        yield choice.delta.content
+                    if choice and choice.finish_reason:
+                        finish = choice.finish_reason
+                    used = chunk.usage or used
             except (openai.RateLimitError, *TRANSIENT, httpx.HTTPError) as err:
                 # ponytail: streams fail over without a same-provider retry
-                span.errors.append(f"{provider.name}: {type(err).__name__}")
+                outcome = "429" if isinstance(err, openai.RateLimitError) else type(err).__name__
+                span.attempt(provider, model, outcome, used)
                 if started:
                     yield RESET
                 continue
-            if not started:
-                span.errors.append(f"{provider.name}: empty reply")
+            if finish != "stop" or not started:
+                # cut off, filtered, ended without finishing, or said nothing
+                outcome = "empty reply" if finish == "stop" else f"incomplete ({finish})"
+                span.attempt(provider, model, outcome, used)
+                if started:
+                    yield RESET
                 continue
-            span.provider, span.model, span.ok = provider.name, model, True
+            span.attempt(provider, model, "ok", used)
             return
         raise AllProvidersFailed(f"{role}: {'; '.join(span.errors)}")
     finally:

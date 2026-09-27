@@ -48,7 +48,7 @@ class Script:
         return json.loads(self.requests[i].content)
 
 
-def completion(content, usage=(12, 5)):
+def completion(content, usage=(12, 5), finish="stop"):
     return httpx.Response(
         200,
         json={
@@ -60,7 +60,7 @@ def completion(content, usage=(12, 5)):
                 {
                     "index": 0,
                     "message": {"role": "assistant", "content": content},
-                    "finish_reason": "stop",
+                    "finish_reason": finish,
                 }
             ],
             "usage": {
@@ -72,19 +72,30 @@ def completion(content, usage=(12, 5)):
     )
 
 
-def chunk(text):
-    body = {
-        "id": "c",
-        "object": "chat.completion.chunk",
-        "created": 0,
-        "model": "m",
-        "choices": [{"index": 0, "delta": {"content": text}, "finish_reason": None}],
-    }
+def chunk(text=None, finish=None, usage=None):
+    body = {"id": "c", "object": "chat.completion.chunk", "created": 0, "model": "m"}
+    body["choices"] = (
+        []
+        if usage
+        else [{"index": 0, "delta": {"content": text} if text else {}, "finish_reason": finish}]
+    )
+    if usage:
+        body["usage"] = {
+            "prompt_tokens": usage[0],
+            "completion_tokens": usage[1],
+            "total_tokens": sum(usage),
+        }
     return f"data: {json.dumps(body)}\n\n"
 
 
-def sse(*texts):
-    body = "".join(map(chunk, texts)) + "data: [DONE]\n\n"
+def sse(*texts, finish="stop", usage=None):
+    """A stream the way providers send it: deltas, a finish chunk, optional usage."""
+    body = "".join(chunk(t) for t in texts)
+    if finish:
+        body += chunk(finish=finish)
+    if usage:
+        body += chunk(usage=usage)
+    body += "data: [DONE]\n\n"
     return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=body)
 
 
@@ -178,6 +189,36 @@ def test_an_empty_reply_fails_over_instead_of_passing_as_an_answer(script):
     assert span.errors == ["a: empty reply"]
 
 
+def test_usage_counts_every_attempt_not_just_the_winner(script):
+    script.add("a.test", completion("", usage=(100, 200)))  # a thinking model's empty reply
+    script.add("b.test", completion('{"n": 5}', usage=(12, 5)))
+    _, [span] = traced(structured)
+    assert (span.tokens_in, span.tokens_out) == (112, 205)
+    assert [(a.provider, a.outcome, a.tokens_out) for a in span.attempts] == [
+        ("a", "empty reply", 200),
+        ("b", "ok", 5),
+    ]
+
+
+def test_unreported_usage_stays_unknown_instead_of_zero(script):
+    script.add("a.test", error(429))
+    script.add("b.test", completion('{"n": 6}', usage=(12, 5)))
+    _, [span] = traced(structured)
+    assert span.attempts[0].tokens_in is None
+    assert (span.tokens_in, span.tokens_out) == (12, 5)
+
+
+def test_stream_usage_is_kept_per_attempt(script):
+    script.add("a.test", sse("cut", finish="length", usage=(40, 1)))
+    script.add("b.test", sse("Fine.", usage=(40, 2)))
+    _, [span] = traced(stream_all())
+    assert [(a.outcome, a.tokens_out) for a in span.attempts] == [
+        ("incomplete (length)", 1),
+        ("ok", 2),
+    ]
+    assert span.tokens_out == 3
+
+
 def test_when_every_provider_fails_the_call_fails(script):
     script.add("a.test", error(429))
     script.add("b.test", error(500), httpx.ReadTimeout("slow"))
@@ -223,6 +264,29 @@ def test_an_empty_stream_fails_over(script):
     chunks, [span] = traced(stream_all())
     assert chunks == ["Fog."]
     assert (span.provider, span.errors) == ("b", ["a: empty reply"])
+
+
+def test_a_truncated_stream_resets_and_fails_over(script):
+    script.add("a.test", sse("The guard raises his sword and", finish="length"))
+    script.add("b.test", sse("The guard lowers his sword."))
+    chunks, [span] = traced(stream_all())
+    assert chunks == ["The guard raises his sword and", llm.RESET, "The guard lowers his sword."]
+    assert (span.provider, span.errors) == ("b", ["a: incomplete (length)"])
+
+
+def test_a_stream_that_never_finishes_is_incomplete(script):
+    script.add("a.test", sse("Half a", finish=None))
+    script.add("b.test", sse("Whole."))
+    chunks, [span] = traced(stream_all())
+    assert chunks[-1] == "Whole." and span.errors == ["a: incomplete (None)"]
+
+
+def test_a_truncated_completion_fails_over(script):
+    script.add("a.test", completion('{"n": 1', finish="length"))
+    script.add("b.test", completion('{"n": 2}'))
+    out, [span] = traced(structured)
+    assert out.n == 2
+    assert span.errors == ["a: incomplete (length)"]
 
 
 def test_a_dropped_stream_resets_instead_of_splicing(script):
@@ -282,6 +346,33 @@ def test_recording_a_compressed_response_needs_no_retry(script, tmp_path):
     out, [span] = traced(structured)
     assert out.n == 8
     assert (span.retries, span.errors) == (0, [])
+
+
+def test_repeated_identical_requests_replay_in_recorded_order(script, tmp_path):
+    cassette = tmp_path / "repeat.jsonl"
+    llm.configure(config=CONFIG, transport=httpx.MockTransport(script), record=cassette)
+    script.add("a.test", completion('{"n": 1}'), completion('{"n": 2}'))
+    traced(structured)
+    traced(structured)
+
+    llm.configure(config=CONFIG, replay=cassette)
+    assert [traced(structured)[0].n, traced(structured)[0].n] == [1, 2]
+    with pytest.raises(openai.NotFoundError, match="take 3"):
+        traced(structured)
+
+    llm.configure(config=CONFIG, replay=cassette)  # a fresh session starts from take 1
+    assert traced(structured)[0].n == 1
+
+
+def test_a_recorded_recovery_replays_as_a_recovery(script, tmp_path):
+    cassette = tmp_path / "recovery.jsonl"
+    llm.configure(config=CONFIG, transport=httpx.MockTransport(script), record=cassette)
+    script.add("a.test", error(503), completion('{"n": 9}'))
+    traced(structured)
+
+    llm.configure(config=CONFIG, replay=cassette)
+    out, [span] = traced(structured)
+    assert (out.n, span.retries, span.errors) == (9, 1, ["a: InternalServerError"])
 
 
 def test_a_replay_miss_fails_fast_and_says_why(script, tmp_path):
