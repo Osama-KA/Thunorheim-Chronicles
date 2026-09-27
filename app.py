@@ -180,6 +180,7 @@ def has_save() -> bool:
 
 
 def new_world() -> WorldState:
+    os.makedirs(os.path.dirname(SAVE_PATH), exist_ok=True)  # state/ isn't in a fresh clone
     with open(SAVE_PATH, "w", encoding="utf-8") as fh:
         json.dump(copy.deepcopy(_DEFAULT_STATE), fh, indent=2, ensure_ascii=False)
     return WorldState()
