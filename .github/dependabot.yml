@@ -8,6 +8,10 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # openai 3.x swaps httpx for httpx2; the gateway's transports are httpx
+      - dependency-name: openai
+        update-types: ["version-update:semver-major"]
     groups:
       python:
         patterns: ["*"]
