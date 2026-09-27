@@ -2,6 +2,7 @@
 transport: failover, validation retries, streaming resets, record/replay."""
 
 import asyncio
+import gzip
 import json
 
 import httpx
@@ -266,6 +267,24 @@ def test_a_recording_replays_without_keys_or_network(script, tmp_path, monkeypat
     replayed, _ = traced(structured)
     assert replayed == recorded
     assert len(script.requests) == 1  # replay never reached the network
+
+
+def test_recording_a_compressed_response_needs_no_retry(script, tmp_path):
+    # Providers gzip their replies; the recorder must not hand back gzip headers on
+    # a body it already decoded, or every recorded call fails once and retries.
+    plain = completion('{"n": 8}')
+    gzipped = httpx.Response(
+        200,
+        headers={"content-type": "application/json", "content-encoding": "gzip"},
+        content=gzip.compress(plain.content),
+    )
+    llm.configure(
+        config=CONFIG, transport=httpx.MockTransport(script), record=tmp_path / "gz.jsonl"
+    )
+    script.add("a.test", gzipped)
+    out, [span] = traced(structured)
+    assert out.n == 8
+    assert (span.retries, span.errors) == (0, [])
 
 
 def test_a_replay_miss_fails_fast_and_says_why(script, tmp_path):

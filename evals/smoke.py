@@ -11,11 +11,16 @@ still works end to end.
 from __future__ import annotations
 
 import asyncio
+import io
 import os
+import sys
 import tempfile
 
 from thunorheim.dm_agent import DMAgent
 from thunorheim.world_state import WorldState
+
+if isinstance(sys.stdout, io.TextIOWrapper):  # model prose isn't always cp1252-safe
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 SCRIPT = [
     # (label, action)
@@ -69,6 +74,10 @@ def main() -> None:
         except Exception as exc:
             print(f"[turn rolled back] {exc}")
         print()
+        for c in dm.last_trace.get("calls", []):
+            ttft = f" ttft {c['ttft_ms']}ms" if c["ttft_ms"] else ""
+            errors = f" errors={c['errors']}" if c["errors"] else ""
+            print(f"    {c['role']:8} {c['provider']}:{c['model']}  {c['ms']}ms{ttft}{errors}")
         print(snapshot(ws))
         print()
 

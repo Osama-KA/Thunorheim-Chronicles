@@ -123,9 +123,7 @@ class Cassette(httpx.AsyncBaseTransport):
                 # connection error, and the gateway would retry it as a blip
                 message = f"no recording {key} in {self.path}; re-record the scenario"
                 return httpx.Response(404, json={"error": {"message": message}})
-            return httpx.Response(
-                entry["status"], headers={"content-type": entry["type"]}, content=entry["body"]
-            )
+            return self._response(entry)
         response = await self.inner.handle_async_request(request)
         body = (await response.aread()).decode()
         entry = {
@@ -138,7 +136,14 @@ class Cassette(httpx.AsyncBaseTransport):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(entry) + "\n")
-        return httpx.Response(response.status_code, headers=response.headers, content=body)
+        return self._response(entry)  # record and replay hand the client the same thing
+
+    @staticmethod
+    def _response(entry: dict[str, Any]) -> httpx.Response:
+        # The body is stored decoded, so only the content type goes back; echoing the
+        # provider's content-encoding would make the client gunzip plain text.
+        headers = {"content-type": entry["type"]}
+        return httpx.Response(entry["status"], headers=headers, content=entry["body"])
 
 
 # --- configuration -----------------------------------------------------------------
