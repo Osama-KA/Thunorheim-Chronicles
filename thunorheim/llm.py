@@ -1,20 +1,3 @@
-"""Model gateway.
-
-Every provider speaks the OpenAI chat-completions API, so one client type covers
-them all; `models.toml` says which model plays which role and in what failover
-order. On top of that client this module adds:
-
-* failover — 429 moves to the next provider; timeouts/5xx retry once, then move on
-* validated output — `structured()` parses into a Pydantic schema and, if the reply
-  doesn't fit, retries once with the validation error fed back
-* streaming — `stream()` fails over mid-stream by yielding RESET and restarting on
-  the next provider; two models' prose is never spliced together
-* tracing — one Span per call (provider, model, prompt version, latency, time to
-  first token, tokens, retries, errors), collected per turn via `start_trace()`
-* record/replay — a cassette at the HTTP layer keyed by (host, request body); the
-  body holds model + messages but never credentials, so recordings are safe to commit
-"""
-
 from __future__ import annotations
 
 import asyncio

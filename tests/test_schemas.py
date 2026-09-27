@@ -1,5 +1,3 @@
-"""Model-output contracts: what parses, what's normalized, what's dropped."""
-
 import pytest
 from pydantic import ValidationError
 

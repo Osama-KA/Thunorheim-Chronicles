@@ -1,22 +1,3 @@
-"""NPC Agent — the consistency layer.
-
-Two responsibilities, called by the DM Agent at two different points in a turn:
-
-  ensure_npc(reference, situation, world_state)
-      Resolve the player's reference ("the bartender") to a canonical entity.
-      - If that entity is already in World State, load the existing sheet.
-      - If it is a named lore character, build the sheet from world knowledge.
-      - If it is genuinely new, pick a generation template and invent a sheet.
-      New sheets are registered via World State create_npc(). Returns the sheet
-      plus a stance (disposition, goals, what they know) — NO committed dialogue
-      yet, because the Resolution Agent has not ruled the outcome.
-
-  render(npc_sheet, verdict, situation, player_action)
-      AFTER the Resolution Agent rules, voice the NPC's actual in-character
-      response, conditioned on the verdict tier. Never decides mechanical
-      outcomes — that is the Resolution Agent's job.
-"""
-
 from __future__ import annotations
 
 from typing import Any

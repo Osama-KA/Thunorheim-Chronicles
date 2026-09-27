@@ -1,26 +1,3 @@
-"""World State Agent — the single source of truth.
-
-Pure Python, no model call. Owns state/session_state.json and is the only thing
-in the system that writes to it. Every other agent reads through it and writes
-through it.
-
-Beyond the plain getters/setters it acts as the deterministic guardrail:
-  * enum validation — rejects off-track values (e.g. role "Bard") before they can
-    corrupt the save
-  * numeric layer — hp / energy_points / disposition_points are the source of
-    truth; their labels (health / energy / disposition) are DERIVED from lookup
-    bands and never set directly. Everything clamps, so a runaway delta can never
-    land on an unmapped value.
-  * progression — xp drives tier/title via per-role thresholds.
-  * turn transaction — begin_turn() snapshots state, mutations stage in memory,
-    commit() persists to disk, rollback() restores the snapshot if a turn fails
-    partway through.
-
-apply_delta() is the untrusted-model boundary: it accepts the Resolution Agent's
-structured delta (numeric: hp_delta / energy_delta / xp_delta / disposition_delta)
-and returns a list of mechanical events (tier_up, death, down) for the DM to narrate.
-"""
-
 from __future__ import annotations
 
 import copy

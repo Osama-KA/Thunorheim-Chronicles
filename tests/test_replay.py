@@ -1,14 +1,5 @@
-"""A real playthrough, recorded once and replayed on every CI run.
-
-Replay needs no keys and no network: the cassette answers every model call exactly
-as the providers did when it was recorded. To record (needs every provider key
-listed in models.toml, so replay sees the same provider chains):
-
-    RECORD_REPLAY=1 uv run pytest tests/test_replay.py
-
-Re-record after changing a prompt, a knowledge-base doc or models.toml. The cassette
-is keyed by request body, so a stale one fails with a clear "no recording" error.
-"""
+# Replays a recorded real playthrough; no keys or network needed. To re-record (after
+# changing prompts, lore or models.toml): RECORD_REPLAY=1 uv run pytest tests/test_replay.py
 
 import asyncio
 import os

@@ -1,11 +1,3 @@
-"""Typed contracts for everything a model returns.
-
-Parsing is the first guardrail (shape): a reply that doesn't fit is rejected and
-retried. world_state.apply_delta is the second (values): it clamps and caps what
-parses. Unknown fields are dropped here, so a model can't smuggle writes (say, a
-raw `disposition_points`) past the capped deltas.
-"""
-
 from __future__ import annotations
 
 from typing import Annotated, Any, Literal

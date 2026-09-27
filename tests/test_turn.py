@@ -1,6 +1,3 @@
-"""Turn orchestration with every model call faked: transaction boundaries, the
-overreach short-circuit, number isolation, and the interjection gate."""
-
 import asyncio
 from pathlib import Path
 

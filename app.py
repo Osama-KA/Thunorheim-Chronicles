@@ -1,13 +1,3 @@
-"""Thunorheim — Streamlit front end.
-
-A wide landscape view: the generated world image as a full-page backdrop, dark
-frosted-glass panels, medieval typography, a chat-style narration log on the left,
-and a live world-state + agent-trace sidebar on the right.
-
-Run locally:  .venv/Scripts/streamlit run app.py
-Requires a valid `az login` (same Foundry auth the engine uses).
-"""
-
 from __future__ import annotations
 
 import asyncio

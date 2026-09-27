@@ -1,15 +1,3 @@
-"""Final persistence test — one long, continuous, reactive 75-turn playthrough
-through the real Foundry pipeline.
-
-A goal-driven AI player pursues the Ashwatch Post / Shattered Seal arc. Mid-run we
-tear down and rebuild WorldState/DMAgent from the save file (cross-session
-persistence), and at a few points we deliberately return to an early NPC (memory
-callbacks). Per-turn persistence assertions run throughout; a transcript and a
-persistence summary are written to pipeline_runs/.
-
-Run: uv run python evals/persistence.py
-"""
-
 from __future__ import annotations
 
 import asyncio

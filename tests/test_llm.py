@@ -1,6 +1,3 @@
-"""The model gateway, driven through the real OpenAI client with a scripted HTTP
-transport: failover, validation retries, streaming resets, record/replay."""
-
 import asyncio
 import gzip
 import json

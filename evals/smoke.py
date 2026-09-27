@@ -1,13 +1,3 @@
-"""Scripted playtest / smoke test for the Thunorheim agent pipeline.
-
-Runs a fixed sequence of turns against a throwaway state file (never touches
-state/session_state.json) and prints the narration plus a state snapshot after
-each turn. Useful for demos and as a regression check that the four-agent loop
-still works end to end.
-
-    uv run python evals/smoke.py
-"""
-
 from __future__ import annotations
 
 import asyncio

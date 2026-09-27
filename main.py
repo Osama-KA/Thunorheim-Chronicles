@@ -1,10 +1,3 @@
-"""Thunorheim — persistent-memory narrative RPG. Terminal entry point.
-
-Thin I/O loop only. The DM Agent is the orchestrator; this just reads player
-input, hands each action to DMAgent.run_turn(), and prints the narration. State
-persists in state/session_state.json between turns and between sessions.
-"""
-
 from __future__ import annotations
 
 import asyncio

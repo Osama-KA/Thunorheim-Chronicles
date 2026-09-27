@@ -1,5 +1,3 @@
-"""Invariants of the deterministic core. No model calls, no credentials."""
-
 from pathlib import Path
 
 import pytest

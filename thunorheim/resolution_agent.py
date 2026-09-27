@@ -1,17 +1,3 @@
-"""Resolution Agent — the logic engine.
-
-Receives the player action, the routed buckets/intents, the relevant world-state
-fields (including raw numbers: hp, energy_points, NPC disposition_points, and the
-player's progression tier), the NPC stance (if any), and relevant world knowledge.
-Evaluates what actually happens through the seven-bucket rules — no dice, no
-narrative convenience — and returns a structured verdict: per-bucket evaluation, a
-combined outcome, a consequence tier, a factual narration seed, a validated numeric
-state delta, an XP award, and an interjection score+candidate.
-
-The rules are baked into the system prompt (lore.get_rules()) rather than
-retrieved per turn, so a bucket can never be split across RAG chunks.
-"""
-
 from __future__ import annotations
 
 from typing import Any

@@ -1,15 +1,3 @@
-"""Full-pipeline stress test — three continuous 10-turn runs (social / combat /
-exploration) through the real Foundry agents.
-
-Each run is reactive: a player-simulator LLM reads the running narration and emits
-the next in-character action, with a few crafted hard actions injected at fixed
-turns to stress the Resolution Agent. Per-turn telemetry is captured via harness-
-side wrappers (no source edits), automated assertions run every turn, and a
-transcript + assertion summary are written to pipeline_runs/.
-
-Run: uv run python evals/stress.py
-"""
-
 from __future__ import annotations
 
 import asyncio

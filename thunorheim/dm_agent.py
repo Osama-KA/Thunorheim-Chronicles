@@ -1,23 +1,3 @@
-"""DM Agent — the orchestrator and the voice of the world.
-
-Every turn starts and ends here. There is no separate game loop; the DM Agent
-drives the pipeline dynamically. The routing decision (call 1) chooses the shape
-of the turn — there is NO fixed agent order:
-
-  * No NPC involved  -> route -> resolve -> narrate
-  * Existing NPC     -> route -> load NPC -> resolve -> NPC render -> narrate
-  * New NPC          -> route -> create NPC from template -> resolve ->
-                        NPC render -> narrate
-  * Overreach        -> route -> short-circuit with a warning (no state change)
-
-Number visibility: the DM and NPC agents only ever receive LABELS (Hurt, Drained,
-Friendly, "Tracker"). The Resolution Agent receives the raw NUMBERS (hp,
-energy_points, disposition_points, tier) so it can reason with precision.
-
-The whole turn runs inside a World State transaction; any failure rolls it back so
-state never ends up half-updated.
-"""
-
 from __future__ import annotations
 
 import copy

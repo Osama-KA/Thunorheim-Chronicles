@@ -1,9 +1,3 @@
-"""Static world knowledge from knowledge-base/: lore, rules, NPC templates.
-
-Topic lookup returns whole documents. Chunked, ranked retrieval replaces this in
-the memory phase (P8); callers only see query_world_knowledge().
-"""
-
 from __future__ import annotations
 
 from functools import cache
