@@ -1,6 +1,7 @@
 # Secrets & environment
 .env
 .env.*
+!.env.example
 .venv/
 
 # Python
@@ -29,3 +30,10 @@ test_search.py
 Thumbs.db
 .vscode/
 .idea/
+
+# Local planning notes
+/PLAN_POINTS.md
+/PLAN.md
+
+# Local agent coordination (shared working notes, never committed)
+/.team/

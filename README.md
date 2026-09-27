@@ -290,7 +290,7 @@ on rare malformed model output.
 
 **Prerequisites**
 
-- Python 3.13
+- [uv](https://docs.astral.sh/uv/) (installs Python 3.13 for you)
 - An Azure AI Foundry project with: a `gpt-5-mini` deployment, the three prompt agents
   (`dm-agent`, `resolution-agent`, `npc-agent`) registered, and an Azure AI Search index
   (Foundry IQ) populated with the `knowledge-base/` documents
@@ -299,34 +299,25 @@ on rare malformed model output.
 **Install**
 
 ```bash
-python -m venv .venv
-.venv\Scripts\activate          # Windows
-pip install -r requirements.txt
+uv sync
 ```
 
-**Configure** — create a `.env`:
-
-```
-AZURE_AI_PROJECT_ENDPOINT=https://<your-resource>.services.ai.azure.com/api/projects/<project>
-AZURE_AI_MODEL_DEPLOYMENT=gpt-5-mini
-AZURE_SEARCH_ENDPOINT=https://<your-search>.search.windows.net
-AZURE_SEARCH_KEY=<key>
-AZURE_SEARCH_INDEX=<index-name>
-```
+**Configure** — copy `.env.example` to `.env` and fill it in.
 
 **Run**
 
 ```bash
-.venv\Scripts\streamlit run app.py      # the full graphical experience
-.venv\Scripts\python main.py            # terminal version
+uv run streamlit run app.py      # the full graphical experience
+uv run python main.py            # terminal version
 ```
 
 **Test**
 
 ```bash
-.venv\Scripts\python playtest.py            # quick 3-turn smoke test
-.venv\Scripts\python pipeline_test.py       # 3 x 10-turn pipeline stress test
-.venv\Scripts\python persistence_test.py    # 75-turn persistence test
+uv run pytest                          # unit + orchestration tests (no keys needed)
+uv run python evals/smoke.py           # quick 3-turn live smoke test
+uv run python evals/stress.py          # 3 x 10-turn live pipeline stress test
+uv run python evals/persistence.py     # 75-turn live persistence test
 ```
 
 State persists in `state/session_state.json` between turns and sessions; **Continue** in

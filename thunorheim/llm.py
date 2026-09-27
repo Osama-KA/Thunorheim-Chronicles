@@ -7,6 +7,7 @@ Foundry portal with full traces.
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 
@@ -16,33 +17,41 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-_project = AIProjectClient(
-    endpoint=os.environ["AZURE_AI_PROJECT_ENDPOINT"],
-    credential=DefaultAzureCredential(),
-)
-_client = _project.get_openai_client()
+
+@functools.cache
+def _openai_client():
+    """Built on first use, so importing the engine needs no credentials (tests, CI)."""
+    project = AIProjectClient(
+        endpoint=os.environ["AZURE_AI_PROJECT_ENDPOINT"],
+        credential=DefaultAzureCredential(),
+    )
+    return project.get_openai_client()
+
 
 _AGENT_NAMES = {
-    "dm":         "dm-agent",
+    "dm": "dm-agent",
     "resolution": "resolution-agent",
-    "npc":        "npc-agent",
+    "npc": "npc-agent",
 }
 _DEFAULT_AGENT = "dm-agent"
 
 
 def _invoke(agent_name: str, system: str, user: str) -> str:
     """Invoke a named Foundry prompt agent via the Responses API."""
-    conversation = _client.conversations.create(
-        items=[{
-            "type": "message",
-            "role": "user",
-            "content": (
-                f"<system_instructions>\n{system}\n</system_instructions>\n\n"
-                f"<user_input>\n{user}\n</user_input>"
-            ),
-        }]
+    client = _openai_client()
+    conversation = client.conversations.create(
+        items=[
+            {
+                "type": "message",
+                "role": "user",
+                "content": (
+                    f"<system_instructions>\n{system}\n</system_instructions>\n\n"
+                    f"<user_input>\n{user}\n</user_input>"
+                ),
+            }
+        ]
     )
-    response = _client.responses.create(
+    response = client.responses.create(
         conversation=conversation.id,
         extra_body={"agent_reference": {"name": agent_name, "type": "agent_reference"}},
     )
@@ -58,13 +67,10 @@ def chat(system: str, user: str, json_mode: bool = False, caller: str | None = N
 def chat_json(system: str, user: str, caller: str | None = None) -> dict:
     """Chat that must return JSON. Tolerates markdown fences; retries once if the
     model returns malformed JSON, so a rare bad emission doesn't cost a whole turn."""
-    for attempt in range(2):
-        raw = chat(system, user, caller=caller)
-        try:
-            return _parse_json(raw)
-        except (json.JSONDecodeError, ValueError):
-            if attempt == 1:
-                raise
+    try:
+        return _parse_json(chat(system, user, caller=caller))
+    except (json.JSONDecodeError, ValueError):
+        return _parse_json(chat(system, user, caller=caller))
 
 
 def _parse_json(raw: str) -> dict:
@@ -79,5 +85,5 @@ def _parse_json(raw: str) -> dict:
     except json.JSONDecodeError:
         start, end = raw.find("{"), raw.rfind("}")
         if start != -1 and end != -1:
-            return json.loads(raw[start:end + 1])
+            return json.loads(raw[start : end + 1])
         raise

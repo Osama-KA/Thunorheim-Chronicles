@@ -19,8 +19,8 @@ import re
 
 import streamlit as st
 
-from agents.dm_agent import DMAgent
-from agents.world_state import ROLES, WorldState, _DEFAULT_STATE
+from thunorheim.dm_agent import DMAgent
+from thunorheim.world_state import _DEFAULT_STATE, ROLES, WorldState
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SAVE_PATH = WorldState().path  # default state/session_state.json
@@ -137,7 +137,9 @@ def smart_quotes(text: str) -> str:
     """Convert straight double quotes to typographic open/close quotes, so the
     old-style body font shows a distinct opening and closing quote on dialogue."""
     text = text.replace("“", '"').replace("”", '"')  # normalize first
-    text = _QUOTE_OPEN.sub(lambda m: m.group(1) + "“", text)  # opener after start/space/bracket/dash
+    text = _QUOTE_OPEN.sub(
+        lambda m: m.group(1) + "“", text
+    )  # opener after start/space/bracket/dash
     return text.replace('"', "”")  # everything else closes
 
 
@@ -194,8 +196,12 @@ def render_sidebar(ws: WorldState, dm: DMAgent) -> None:
     pending = prog.get("pending_tier")
     xp_line = (
         "<span style='color:#e6b24e;'>⚜ Ready for advancement — seek a Guild mentor</span>"
-        if pending else
-        (f"{prog['xp_to_next']} XP to next rank" if prog.get("xp_to_next") is not None else "Legendary — max rank")
+        if pending
+        else (
+            f"{prog['xp_to_next']} XP to next rank"
+            if prog.get("xp_to_next") is not None
+            else "Legendary — max rank"
+        )
     )
     blocks.append(
         f"<div class='frost'><h3>{esc(p['name'] or 'Nameless')}</h3>"
@@ -210,14 +216,21 @@ def render_sidebar(ws: WorldState, dm: DMAgent) -> None:
         f"{bar('Health', p['hp'], '#a83232', p['health'])}"
         f"{bar('Energy', p['energy_points'], '#d9a441', p['energy'])}"
         f"<div class='muted'>\U0001f4cd {esc(p['location'])}</div>"
-        + (f"<div class='muted'>Effects: {esc(', '.join(p['active_effects']))}</div>" if p['active_effects'] else "")
+        + (
+            f"<div class='muted'>Effects: {esc(', '.join(p['active_effects']))}</div>"
+            if p["active_effects"]
+            else ""
+        )
         + "</div>"
     )
 
     # inventory
     inv = s["inventory"]
-    inv_html = ("".join(f"<div class='muted' style='padding:1px 0;'>• {esc(i)}</div>" for i in inv)
-                if inv else "<div class='muted'>(empty)</div>")
+    inv_html = (
+        "".join(f"<div class='muted' style='padding:1px 0;'>• {esc(i)}</div>" for i in inv)
+        if inv
+        else "<div class='muted'>(empty)</div>"
+    )
     blocks.append(f"<div class='frost'><h3>Inventory</h3>{inv_html}</div>")
 
     # quests
@@ -225,9 +238,12 @@ def render_sidebar(ws: WorldState, dm: DMAgent) -> None:
         rows = ""
         for q in s["quests"]["active"]:
             clues = "".join(f"<li class='muted'>{esc(c)}</li>" for c in q.get("known_clues", []))
-            rows += (f"<div style='margin-bottom:6px;'><b style='color:#e0a94a;'>{esc(q['title'])}</b>"
-                     f"<div class='muted'>{esc(q.get('current_objective',''))}</div>"
-                     + (f"<ul style='margin:4px 0 0 16px;'>{clues}</ul>" if clues else "") + "</div>")
+            rows += (
+                f"<div style='margin-bottom:6px;'><b style='color:#e0a94a;'>{esc(q['title'])}</b>"
+                f"<div class='muted'>{esc(q.get('current_objective', ''))}</div>"
+                + (f"<ul style='margin:4px 0 0 16px;'>{clues}</ul>" if clues else "")
+                + "</div>"
+            )
         blocks.append(f"<div class='frost'><h3>Active Quests</h3>{rows}</div>")
 
     # reputation
@@ -248,15 +264,20 @@ def render_sidebar(ws: WorldState, dm: DMAgent) -> None:
             stt = npc["state"]
             pts = stt.get("disposition_points", 0)
             sign = f"+{pts}" if pts > 0 else str(pts)
-            rows += (f"<div class='npc-row'><span>{esc(name)}</span>"
-                     f"<span style='color:{disp_color(pts)};'>{esc(stt['disposition_toward_player'])} {sign}</span></div>")
+            rows += (
+                f"<div class='npc-row'><span>{esc(name)}</span>"
+                f"<span style='color:{disp_color(pts)};'>{esc(stt['disposition_toward_player'])} {sign}</span></div>"
+            )
         blocks.append(f"<div class='frost'><h3>People Met</h3>{rows}</div>")
 
     # world flags
     flags = [k.replace("_", " ").title() for k, v in s["world_flags"].items() if v]
     if flags:
-        blocks.append("<div class='frost'><h3>The World Turns</h3>"
-                      + "".join(f"<span class='chip'>{esc(f)}</span>" for f in flags) + "</div>")
+        blocks.append(
+            "<div class='frost'><h3>The World Turns</h3>"
+            + "".join(f"<span class='chip'>{esc(f)}</span>" for f in flags)
+            + "</div>"
+        )
 
     # agent trace
     tr = dm.last_trace
@@ -270,7 +291,11 @@ def render_sidebar(ws: WorldState, dm: DMAgent) -> None:
                 f"<div class='muted'>Buckets: {esc(', '.join(tr.get('buckets', [])) or '—')}</div>"
                 f"<div class='muted'>Interjection: score {ij.get('score')} · "
                 f"{'FIRED' if ij.get('fired') else 'quiet'}</div>"
-                + (f"<div class='muted'>Events: {esc(', '.join(tr.get('events', [])))}</div>" if tr.get("events") else "")
+                + (
+                    f"<div class='muted'>Events: {esc(', '.join(tr.get('events', [])))}</div>"
+                    if tr.get("events")
+                    else ""
+                )
             )
         else:
             peek = "<div class='muted' style='margin-top:8px;color:#d98b5a;'>Overreach — turn rejected, no state change</div>"
@@ -310,8 +335,10 @@ def screen_create() -> None:
     st.markdown("<div style='height:5vh;'></div>", unsafe_allow_html=True)
     _, mid, _ = st.columns([1, 2, 1])
     with mid:
-        st.markdown("<div class='frost'><h3>The Warden's Guild logs every new operative.</h3></div>",
-                    unsafe_allow_html=True)
+        st.markdown(
+            "<div class='frost'><h3>The Warden's Guild logs every new operative.</h3></div>",
+            unsafe_allow_html=True,
+        )
         name = st.text_input("Your name", value="", placeholder="Edwyn Carr")
         role = st.radio("Your calling", ROLES, format_func=lambda r: f"{r} — {ROLE_DESC[r]}")
         cols = st.columns(2)
@@ -319,8 +346,10 @@ def screen_create() -> None:
             ws = new_world()
             ws.update_player(name=name.strip() or "Edwyn Carr", role=role)
             ws.grant_starting_loadout(role)
-            ws.update_session(current_scene=f"{name.strip() or 'Edwyn Carr'} the {role} has just arrived "
-                              "in Greyhold, stepping into the Ashen Flagon.")
+            ws.update_session(
+                current_scene=f"{name.strip() or 'Edwyn Carr'} the {role} has just arrived "
+                "in Greyhold, stepping into the Ashen Flagon."
+            )
             ws.save_state()
             st.session_state.ws = ws
             st.session_state.dm = DMAgent(ws)
@@ -348,8 +377,9 @@ def screen_play() -> None:
             if who == "player":
                 log += f"<div class='player-msg'>{esc(m['text'])}</div>"
             elif who == "overreach":
-                body = esc(m["text"]).replace("!!! PLAYER OVERREACH DETECTED",
-                                              "<b>⚠ PLAYER OVERREACH DETECTED</b>")
+                body = esc(m["text"]).replace(
+                    "!!! PLAYER OVERREACH DETECTED", "<b>⚠ PLAYER OVERREACH DETECTED</b>"
+                )
                 log += f"<div class='overreach-msg'>{body}</div>"
             elif who == "system":
                 log += f"<div class='system-msg'>{esc(m['text'])}</div>"
@@ -358,8 +388,10 @@ def screen_play() -> None:
         log += "</div>"
         st.markdown(log, unsafe_allow_html=True)
         if st.session_state.game_over:
-            st.markdown("<div class='system-msg'>Your saga ends here. The Greymark keeps what it takes.</div>",
-                        unsafe_allow_html=True)
+            st.markdown(
+                "<div class='system-msg'>Your saga ends here. The Greymark keeps what it takes.</div>",
+                unsafe_allow_html=True,
+            )
 
     prompt = st.chat_input("What do you do?", disabled=st.session_state.game_over)
     if prompt:
@@ -373,7 +405,10 @@ def screen_play() -> None:
                 st.session_state.game_over = True
         except Exception as exc:
             st.session_state.messages.append(
-                {"who": "system", "text": f"[The turn faltered and was rolled back — state unchanged.] {exc}"}
+                {
+                    "who": "system",
+                    "text": f"[The turn faltered and was rolled back — state unchanged.] {exc}",
+                }
             )
         st.rerun()
 

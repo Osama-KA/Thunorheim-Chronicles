@@ -7,17 +7,16 @@ persists in state/session_state.json between turns and between sessions.
 
 from __future__ import annotations
 
+import io
 import sys
 
-from agents.dm_agent import DMAgent
-from agents.world_state import ROLES, WorldState
+from thunorheim.dm_agent import DMAgent
+from thunorheim.world_state import ROLES, WorldState
 
 # Model prose can contain characters outside the Windows console codepage; keep the
 # CLI from crashing on them.
-try:
+if isinstance(sys.stdout, io.TextIOWrapper):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-except (AttributeError, ValueError):
-    pass
 
 BANNER = r"""
 =========================================================
@@ -66,8 +65,10 @@ def main() -> None:
     if not ws.get_field("player.name"):
         create_character(ws)
     else:
-        print(f"  Welcome back, {ws.get_field('player.name')} "
-              f"the {ws.get_field('player.role')}. Turn {ws.get_field('session.turn')}.\n")
+        print(
+            f"  Welcome back, {ws.get_field('player.name')} "
+            f"the {ws.get_field('player.role')}. Turn {ws.get_field('session.turn')}.\n"
+        )
 
     opening_scene(ws)
 

@@ -12,7 +12,7 @@ are baked into agent prompts and don't need search.
 from __future__ import annotations
 
 import os
-from functools import lru_cache
+from functools import cache
 
 from azure.core.credentials import AzureKeyCredential
 from azure.search.documents import SearchClient
@@ -26,15 +26,15 @@ _KB_DIR = os.path.join(_PROJECT_ROOT, "knowledge-base")
 # Topic -> source document filenames in the search index.
 # These match metadata_storage_path values returned by Azure AI Search.
 _TOPIC_DOCS = {
-    "world":      ["world_summary.md"],
-    "location":   ["starting_location.md"],
-    "quest":      ["main_quest.md"],
+    "world": ["world_summary.md"],
+    "location": ["starting_location.md"],
+    "quest": ["main_quest.md"],
     "companions": ["party_profiles.md"],
-    "party":      ["party_profiles.md"],
-    "factions":   ["factions.md"],
-    "artifact":   ["artifact.md"],
-    "monster":    ["monster.md"],
-    "creature":   ["monster.md"],
+    "party": ["party_profiles.md"],
+    "factions": ["factions.md"],
+    "artifact": ["artifact.md"],
+    "monster": ["monster.md"],
+    "creature": ["monster.md"],
 }
 
 
@@ -48,11 +48,7 @@ def _get_search_client() -> SearchClient:
 
 def _search(query: str, top: int = 5, filter_expr: str | None = None) -> list[dict]:
     """Run a search query and return raw result dicts."""
-    client = _get_search_client()
-    kwargs = {"top": top}
-    if filter_expr:
-        kwargs["filter"] = filter_expr
-    results = client.search(query, **kwargs)
+    results = _get_search_client().search(query, top=top, filter=filter_expr)
     return [dict(r) for r in results]
 
 
@@ -69,11 +65,11 @@ def _format_results(results: list[dict]) -> str:
     return "\n\n---\n\n".join(parts)
 
 
-@lru_cache(maxsize=None)
+@cache
 def _read_local(filename: str) -> str:
     """Read a local knowledge-base file. Used for rules and templates only."""
     path = os.path.join(_KB_DIR, filename)
-    with open(path, "r", encoding="utf-8") as fh:
+    with open(path, encoding="utf-8") as fh:
         return fh.read()
 
 
@@ -115,9 +111,7 @@ def query_world_knowledge(query: str, topics: list[str] | None = None) -> str:
             for topic in topics:
                 target_files.extend(_TOPIC_DOCS.get(topic, []))
 
-            # De-dup preserving order
-            seen: set[str] = set()
-            ordered = [f for f in target_files if not (f in seen or seen.add(f))]
+            ordered = list(dict.fromkeys(target_files))  # de-dup, keep order
 
             if not ordered:
                 # Topics given but none mapped — fall back to free search

@@ -7,7 +7,7 @@ turns to stress the Resolution Agent. Per-turn telemetry is captured via harness
 side wrappers (no source edits), automated assertions run every turn, and a
 transcript + assertion summary are written to pipeline_runs/.
 
-Run: .venv/Scripts/python.exe pipeline_test.py
+Run: uv run python evals/stress.py
 """
 
 from __future__ import annotations
@@ -16,24 +16,37 @@ import os
 import tempfile
 import traceback
 
-import agents.dm_agent as dm_agent
-import agents.llm as llm
-import agents.npc_agent as npc_agent
-import agents.resolution_agent as resolution_agent
-from agents.world_state import (
-    WorldState, derive_health, derive_energy, derive_disposition, title_for,
+import thunorheim.dm_agent as dm_agent
+import thunorheim.llm as llm
+import thunorheim.npc_agent as npc_agent
+import thunorheim.resolution_agent as resolution_agent
+from thunorheim.world_state import (
+    WorldState,
+    derive_disposition,
+    derive_energy,
+    derive_health,
+    title_for,
 )
 
 OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pipeline_runs")
 os.makedirs(OUT_DIR, exist_ok=True)
 SIM_MODEL = os.environ["AZURE_AI_MODEL_DEPLOYMENT"]
 CANONICAL_FLAGS = {
-    "drenhold_discovered", "ashen_seal_found", "ashwatch_post_investigated",
-    "survivor_rescued", "aldric_trust_unlocked",
+    "drenhold_discovered",
+    "ashen_seal_found",
+    "ashwatch_post_investigated",
+    "survivor_rescued",
+    "aldric_trust_unlocked",
 }
 ALLOWED_TIERS = {
-    "Full success", "Partial success", "Failure", "Backfire",
-    "Undetected", "Suspected", "Spotted", "Compromised",
+    "Full success",
+    "Partial success",
+    "Failure",
+    "Backfire",
+    "Undetected",
+    "Suspected",
+    "Spotted",
+    "Compromised",
 }
 
 # --- Telemetry capture --------------------------------------------------------
@@ -85,13 +98,14 @@ def simulate_player(role: str, theme: str, scene: str, last_narration: str) -> s
         "guard appears', 'the door opens', or 'I succeed'). No meta-commentary. "
         f"Stay on theme: {theme}."
     )
-    user = f"CURRENT SCENE: {scene}\n\nWHAT JUST HAPPENED (DM):\n{last_narration}\n\nYour next action:"
+    user = (
+        f"CURRENT SCENE: {scene}\n\nWHAT JUST HAPPENED (DM):\n{last_narration}\n\nYour next action:"
+    )
     for attempt in range(3):
         try:
-            r = llm._client.chat.completions.create(
+            r = llm._openai_client().chat.completions.create(
                 model=SIM_MODEL,
-                messages=[{"role": "system", "content": system},
-                          {"role": "user", "content": user}],
+                messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
             )
             out = (r.choices[0].message.content or "").strip()
             if out:
@@ -107,36 +121,69 @@ def simulate_player(role: str, theme: str, scene: str, last_narration: str) -> s
 # injections: {turn: (action, kind)}; kind drives expectation-specific assertions.
 RUNS = [
     {
-        "name": "combat", "role": "Warden", "seed": 11,
+        "name": "combat",
+        "role": "Warden",
+        "seed": 11,
         "theme": "hunt and fight the corrupted creatures stalking the Greymark road",
         "opening": "I head out through the Greywall Gate into the Greymark, blade ready, "
-                   "tracking whatever has been moving on the road east.",
+        "tracking whatever has been moving on the road east.",
         "injections": {
-            3: ("I pull a vial of greywater extract from my kit and hurl it at the nearest creature.", "absent_item"),
-            5: ("I kick a loose boulder down the slope to stagger it, then leap after and drive my blade into the vein lines on its flank.", "multibucket"),
-            8: ("Bleeding and slowed, I ignore the brightening veins and charge straight in for the kill.", "reckless"),
+            3: (
+                "I pull a vial of greywater extract from my kit and hurl it at the nearest creature.",
+                "absent_item",
+            ),
+            5: (
+                "I kick a loose boulder down the slope to stagger it, then leap after and drive my blade into the vein lines on its flank.",
+                "multibucket",
+            ),
+            8: (
+                "Bleeding and slowed, I ignore the brightening veins and charge straight in for the kill.",
+                "reckless",
+            ),
             9: ("The Greywalker shudders and drops dead at my feet.", "overreach"),
         },
     },
     {
-        "name": "social", "role": "Shroud", "seed": 22,
+        "name": "social",
+        "role": "Shroud",
+        "seed": 22,
         "theme": "work the Ashen Flagon and Guild Hall — read people, gather information, build leverage",
         "opening": "I settle into a corner of the Ashen Flagon and start reading the room for who knows the most.",
         "injections": {
-            4: ("I lean on the nervous stranger at the bar, implying I know a secret of theirs, to force them to talk.", "manip"),
-            7: ("I march up to Aldric and demand he hand over the classified outpost reports right now.", "demand"),
+            4: (
+                "I lean on the nervous stranger at the bar, implying I know a secret of theirs, to force them to talk.",
+                "manip",
+            ),
+            7: (
+                "I march up to Aldric and demand he hand over the classified outpost reports right now.",
+                "demand",
+            ),
             9: ("Aldric nods, unlocks his desk, and hands me the sealed dossier.", "overreach"),
         },
     },
     {
-        "name": "exploration", "role": "Runescribe", "seed": 33,
+        "name": "exploration",
+        "role": "Runescribe",
+        "seed": 33,
         "theme": "travel east toward Ashwatch Post, investigating the road, terrain, and any signs",
         "opening": "I leave Greyhold through the Greywall Gate and head east down the road toward Ashwatch Post, watching the ground.",
         "injections": {
-            2: ("I slow down and carefully search the road surface ahead for tracks or signs of passage.", "tracks"),
-            5: ("I throw out my hand and hurl a ball of fire at the dry scrub to clear the way.", "rolemismatch"),
-            7: ("Exhausted, I try to scramble across the crumbling Blight-rotted ravine ledge.", "hazard"),
-            9: ("A hidden door grinds open in the rock, revealing the gates of Drenhold.", "overreach"),
+            2: (
+                "I slow down and carefully search the road surface ahead for tracks or signs of passage.",
+                "tracks",
+            ),
+            5: (
+                "I throw out my hand and hurl a ball of fire at the dry scrub to clear the way.",
+                "rolemismatch",
+            ),
+            7: (
+                "Exhausted, I try to scramble across the crumbling Blight-rotted ravine ledge.",
+                "hazard",
+            ),
+            9: (
+                "A hidden door grinds open in the rock, revealing the gates of Drenhold.",
+                "overreach",
+            ),
         },
     },
 ]
@@ -147,12 +194,21 @@ def snapshot(ws: WorldState) -> dict:
     s = ws.get_state()
     p, prog = s["player"], s["progression"]
     return {
-        "turn": s["session"]["turn"], "hp": p["hp"], "health": p["health"],
-        "ep": p["energy_points"], "energy": p["energy"], "location": p["location"],
-        "xp": prog["xp"], "tier": prog["tier"], "title": prog["title"],
-        "pending_tier": prog["pending_tier"], "inventory": list(s["inventory"]),
-        "npcs": {n: (d["state"]["disposition_toward_player"], d["state"]["disposition_points"])
-                 for n, d in s["npcs_met"].items()},
+        "turn": s["session"]["turn"],
+        "hp": p["hp"],
+        "health": p["health"],
+        "ep": p["energy_points"],
+        "energy": p["energy"],
+        "location": p["location"],
+        "xp": prog["xp"],
+        "tier": prog["tier"],
+        "title": prog["title"],
+        "pending_tier": prog["pending_tier"],
+        "inventory": list(s["inventory"]),
+        "npcs": {
+            n: (d["state"]["disposition_toward_player"], d["state"]["disposition_points"])
+            for n, d in s["npcs_met"].items()
+        },
         "active_quests": [q["title"] for q in s["quests"]["active"]],
         "flags_set": sorted(k for k, v in s["world_flags"].items() if v),
     }
@@ -165,53 +221,69 @@ def run_assertions(run, turn, kind, pre, post, prose, results):
 
     overreach = kind == "overreach"
     if overreach:
-        chk("F.overreach_short_circuit",
-            prose.startswith("!!! PLAYER OVERREACH") and post["turn"] == pre["turn"]
-            and post["hp"] == pre["hp"] and post["xp"] == pre["xp"]
+        chk(
+            "F.overreach_short_circuit",
+            prose.startswith("!!! PLAYER OVERREACH")
+            and post["turn"] == pre["turn"]
+            and post["hp"] == pre["hp"]
+            and post["xp"] == pre["xp"]
             and len(post["npcs"]) == len(pre["npcs"]),
-            f"turn {pre['turn']}->{post['turn']} hp {pre['hp']}->{post['hp']}")
+            f"turn {pre['turn']}->{post['turn']} hp {pre['hp']}->{post['hp']}",
+        )
         return  # no further state-change assertions on a short-circuited turn
 
-    chk("A.turn_increment", post["turn"] == pre["turn"] + 1,
-        f"{pre['turn']}->{post['turn']}")
-    chk("B.health_sync",
-        0 <= post["hp"] <= 100 and 0 <= post["ep"] <= 100
+    chk("A.turn_increment", post["turn"] == pre["turn"] + 1, f"{pre['turn']}->{post['turn']}")
+    chk(
+        "B.health_sync",
+        0 <= post["hp"] <= 100
+        and 0 <= post["ep"] <= 100
         and derive_health(post["hp"]) == post["health"]
         and derive_energy(post["ep"]) == post["energy"],
-        f"hp{post['hp']}={post['health']} ep{post['ep']}={post['energy']}")
-    npc_ok = all(-100 <= dp <= 100 and derive_disposition(dp) == lbl
-                 for lbl, dp in post["npcs"].values())
-    chk("C.npc_integrity", npc_ok and len(post["npcs"]) >= len(pre["npcs"]),
-        str(post["npcs"]))
-    chk("D.canonical_flags", set(post["flags_set"]) <= CANONICAL_FLAGS,
-        str(post["flags_set"]))
-    chk("E.progression",
-        1 <= post["tier"] <= 6 and post["title"] == title_for(run["role"], post["tier"])
+        f"hp{post['hp']}={post['health']} ep{post['ep']}={post['energy']}",
+    )
+    npc_ok = all(
+        -100 <= dp <= 100 and derive_disposition(dp) == lbl for lbl, dp in post["npcs"].values()
+    )
+    chk("C.npc_integrity", npc_ok and len(post["npcs"]) >= len(pre["npcs"]), str(post["npcs"]))
+    chk("D.canonical_flags", set(post["flags_set"]) <= CANONICAL_FLAGS, str(post["flags_set"]))
+    chk(
+        "E.progression",
+        1 <= post["tier"] <= 6
+        and post["title"] == title_for(run["role"], post["tier"])
         and post["xp"] >= pre["xp"]
         and (post["pending_tier"] is None or post["pending_tier"] > post["tier"]),
-        f"t{post['tier']} {post['title']} xp{post['xp']} pend{post['pending_tier']}")
+        f"t{post['tier']} {post['title']} xp{post['xp']} pend{post['pending_tier']}",
+    )
 
     verdict = CAP.get("verdict") or {}
     if verdict:
-        chk("H.verdict_schema",
-            all(k in verdict for k in ("buckets", "combined_outcome", "consequence_tier", "narration_seed"))
+        chk(
+            "H.verdict_schema",
+            all(
+                k in verdict
+                for k in ("buckets", "combined_outcome", "consequence_tier", "narration_seed")
+            )
             and verdict.get("consequence_tier") in ALLOWED_TIERS,
-            str(verdict.get("consequence_tier")))
+            str(verdict.get("consequence_tier")),
+        )
     dmf = CAP.get("dm_fields") or {}
     leak = [k for k in ("hp", "energy_points") if k in (dmf.get("player") or {})]
     sheet = CAP.get("npc_sheet")
     sheet_leak = sheet is not None and "disposition_points" in sheet.get("state", {})
-    chk("I.number_isolation", not leak and not sheet_leak,
-        f"dm_leak={leak} sheet_leak={sheet_leak}")
+    chk(
+        "I.number_isolation", not leak and not sheet_leak, f"dm_leak={leak} sheet_leak={sheet_leak}"
+    )
 
     if kind == "absent_item":
         tier = verdict.get("consequence_tier")
         added = [i for i in post["inventory"] if "greywater" in i.lower()]
-        chk("G.absent_item", tier != "Full success" and not added,
-            f"tier={tier} added={added}")
+        chk("G.absent_item", tier != "Full success" and not added, f"tier={tier} added={added}")
     if kind == "tracks":
-        chk("J.quest_linking", "The Shattered Seal" in post["active_quests"],
-            str(post["active_quests"]))
+        chk(
+            "J.quest_linking",
+            "The Shattered Seal" in post["active_quests"],
+            str(post["active_quests"]),
+        )
 
 
 # --- Transcript ---------------------------------------------------------------
@@ -236,7 +308,10 @@ def fmt_turn(turn, kind, action, prose, post):
             f"**Interjection score:** {ij.get('unpredictability_score')}",
         ]
     lines += [
-        "", f"**DM narration:**", prose, "",
+        "",
+        "**DM narration:**",
+        prose,
+        "",
         f"**State after:** turn {post['turn']} | {post['health']}({post['hp']})/{post['energy']}({post['ep']}) "
         f"| {post['title']} t{post['tier']} xp{post['xp']} pend{post['pending_tier']} | @ {post['location']}",
         f"  npcs={post['npcs']}",
@@ -254,7 +329,9 @@ def run_one(run, results):
     ws = WorldState(tmp)
     ws.update_player(name="Test Operative", role=run["role"])
     ws.grant_starting_loadout(run["role"])
-    ws.update_session(current_scene=f"A {run['role']} in Greyhold, beginning a {run['name']} scenario.")
+    ws.update_session(
+        current_scene=f"A {run['role']} in Greyhold, beginning a {run['name']} scenario."
+    )
     ws.save_state()
     dm_agent.seed_interjections(run["seed"])
     dm = dm_agent.DMAgent(ws)
@@ -267,8 +344,12 @@ def run_one(run, results):
         elif turn in run["injections"]:
             action, kind = run["injections"][turn]
         else:
-            action, kind = simulate_player(run["role"], run["theme"],
-                                            ws.get_field("session.current_scene"), last), None
+            action, kind = (
+                simulate_player(
+                    run["role"], run["theme"], ws.get_field("session.current_scene"), last
+                ),
+                None,
+            )
         CAP.clear()
         pre = snapshot(ws)
         try:

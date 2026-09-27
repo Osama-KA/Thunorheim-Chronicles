@@ -41,25 +41,60 @@ NPC_DISPOSITION = ["On sight", "Hostile", "Unfriendly", "Neutral", "Trusting", "
 
 # --- Derivation bands (descending threshold, label) ---------------------------
 
-HEALTH_BANDS = [(100, "Fresh"), (75, "Scratched"), (50, "Hurt"), (25, "Wounded"),
-                (10, "Critical"), (1, "Down"), (0, "Dead")]
+HEALTH_BANDS = [
+    (100, "Fresh"),
+    (75, "Scratched"),
+    (50, "Hurt"),
+    (25, "Wounded"),
+    (10, "Critical"),
+    (1, "Down"),
+    (0, "Dead"),
+]
 ENERGY_BANDS = [(76, "Full"), (51, "Strained"), (26, "Drained"), (1, "Empty"), (0, "Collapsed")]
-DISPOSITION_BANDS = [(61, "Allied"), (21, "Friendly"), (1, "Trusting"), (0, "Neutral"),
-                     (-20, "Unfriendly"), (-60, "Hostile"), (-100, "On sight")]
+DISPOSITION_BANDS = [
+    (61, "Allied"),
+    (21, "Friendly"),
+    (1, "Trusting"),
+    (0, "Neutral"),
+    (-20, "Unfriendly"),
+    (-60, "Hostile"),
+    (-100, "On sight"),
+]
 
 # Label -> representative points, so a disposition given as a label (e.g. an NPC's
 # initial stance) maps onto the numeric scale.
-DISPOSITION_MIDPOINTS = {"Allied": 80, "Friendly": 40, "Trusting": 10, "Neutral": 0,
-                         "Unfriendly": -10, "Hostile": -40, "On sight": -80}
+DISPOSITION_MIDPOINTS = {
+    "Allied": 80,
+    "Friendly": 40,
+    "Trusting": 10,
+    "Neutral": 0,
+    "Unfriendly": -10,
+    "Hostile": -40,
+    "On sight": -80,
+}
 
 # --- Progression --------------------------------------------------------------
 
 TIER_THRESHOLDS = [0, 100, 250, 500, 900, 1500]  # index i -> tier i+1
 ROLE_TITLES = {
-    "Warden":     ["Recruit", "Tracker", "Warden", "Greymark Veteran", "Ironclad", "Legendary Warden"],
-    "Runescribe": ["Apprentice", "Inscriber", "Runescribe", "Arcanist", "Lorekeeper", "Legendary Runescribe"],
-    "Shroud":     ["Shadow", "Operative", "Shroud", "Ghostblade", "Whisper", "Legendary Shroud"],
-    "Thornwarden":["Herbalist", "Field Medic", "Thornwarden", "Blightwalker", "Thornweaver", "Legendary Thornwarden"],
+    "Warden": ["Recruit", "Tracker", "Warden", "Greymark Veteran", "Ironclad", "Legendary Warden"],
+    "Runescribe": [
+        "Apprentice",
+        "Inscriber",
+        "Runescribe",
+        "Arcanist",
+        "Lorekeeper",
+        "Legendary Runescribe",
+    ],
+    "Shroud": ["Shadow", "Operative", "Shroud", "Ghostblade", "Whisper", "Legendary Shroud"],
+    "Thornwarden": [
+        "Herbalist",
+        "Field Medic",
+        "Thornwarden",
+        "Blightwalker",
+        "Thornweaver",
+        "Legendary Thornwarden",
+    ],
 }
 
 
@@ -139,18 +174,47 @@ _DEFAULT_STATE = {
         "survivor_rescued": False,
         "aldric_trust_unlocked": False,
     },
-    "progression": {"xp": 0, "tier": 1, "title": "Recruit", "xp_to_next": 100, "pending_tier": None},
-    "session": {"turn": 0, "current_scene": "", "last_scene_summary": "",
-                "open_threads": [], "active_npc": ""},
+    "progression": {
+        "xp": 0,
+        "tier": 1,
+        "title": "Recruit",
+        "xp_to_next": 100,
+        "pending_tier": None,
+    },
+    "session": {
+        "turn": 0,
+        "current_scene": "",
+        "last_scene_summary": "",
+        "open_threads": [],
+        "active_npc": "",
+    },
 }
 
 # Starting kit per role, granted at character creation so the player always has a
 # defined loadout (weapons/tools stay consistent instead of being improvised).
 ROLE_LOADOUTS = {
-    "Warden":     ["longsword", "Warden field kit", "hooded cloak", "flint and tinder", "torch x2"],
-    "Runescribe": ["walking staff", "rune-slate", "iron inscribing stylus", "satchel of blank flint chips", "lantern"],
-    "Shroud":     ["pair of throwing knives", "lockpicks", "dark hooded cloak", "smoke vial", "coin purse"],
-    "Thornwarden":["curved knife", "Thorncraft kit", "herb pouch", "Thorncraft resistance salve x2", "grey cloak"],
+    "Warden": ["longsword", "Warden field kit", "hooded cloak", "flint and tinder", "torch x2"],
+    "Runescribe": [
+        "walking staff",
+        "rune-slate",
+        "iron inscribing stylus",
+        "satchel of blank flint chips",
+        "lantern",
+    ],
+    "Shroud": [
+        "pair of throwing knives",
+        "lockpicks",
+        "dark hooded cloak",
+        "smoke vial",
+        "coin purse",
+    ],
+    "Thornwarden": [
+        "curved knife",
+        "Thorncraft kit",
+        "herb pouch",
+        "Thorncraft resistance salve x2",
+        "grey cloak",
+    ],
 }
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -178,7 +242,7 @@ class WorldState:
     # ------------------------------------------------------------------ load/save
     def _load(self) -> dict:
         if os.path.exists(self.path):
-            with open(self.path, "r", encoding="utf-8") as fh:
+            with open(self.path, encoding="utf-8") as fh:
                 text = fh.read().strip()
             if text:
                 return json.loads(text)
@@ -379,11 +443,23 @@ class WorldState:
                 return a
         # cross-scale synonyms (model using faction words for Guild standing, etc.)
         synonyms = {
-            "wardens_guild": {"neutral": "Initiate", "unknown": "Unknown", "friendly": "Trusted",
-                              "trusting": "Trusted", "allied": "Respected", "unfriendly": "Initiate",
-                              "hostile": "Disgraced"},
-            "_faction": {"initiate": "Neutral", "unknown": "Neutral", "trusted": "Friendly",
-                         "respected": "Friendly", "distinguished": "Allied", "disgraced": "Hostile"},
+            "wardens_guild": {
+                "neutral": "Initiate",
+                "unknown": "Unknown",
+                "friendly": "Trusted",
+                "trusting": "Trusted",
+                "allied": "Respected",
+                "unfriendly": "Initiate",
+                "hostile": "Disgraced",
+            },
+            "_faction": {
+                "initiate": "Neutral",
+                "unknown": "Neutral",
+                "trusted": "Friendly",
+                "respected": "Friendly",
+                "distinguished": "Allied",
+                "disgraced": "Hostile",
+            },
         }
         table = synonyms["wardens_guild"] if target == "wardens_guild" else synonyms["_faction"]
         return table.get(low)
@@ -479,7 +555,8 @@ class WorldState:
             self.update_player(location=delta["location"])
         if delta.get("player"):
             changes = {
-                k: v for k, v in delta["player"].items()
+                k: v
+                for k, v in delta["player"].items()
                 if v is not None and k not in ("health", "energy", "hp", "energy_points")
             }
             if changes:
