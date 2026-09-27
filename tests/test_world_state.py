@@ -1,5 +1,3 @@
-"""Invariants of the deterministic core. No model calls, no credentials."""
-
 from pathlib import Path
 
 import pytest
@@ -133,14 +131,20 @@ def test_updates_for_unknown_npcs_are_ignored(ws):
     assert ws.get_state()["npcs_met"] == {}
 
 
-def test_npc_disposition_is_numeric_and_clamped(ws):
+def test_npc_disposition_moves_in_capped_steps(ws):
     ws.create_npc(
         "Torben Grall", {"name": "Torben Grall"}, {"disposition_toward_player": "Friendly"}
     )
     assert ws.get_npc("Torben Grall")["state"]["disposition_points"] == 40
     ws.apply_delta({"npc_updates": {"Torben Grall": {"disposition_delta": 500}}})
     st = ws.get_npc("Torben Grall")["state"]
-    assert (st["disposition_points"], st["disposition_toward_player"]) == (100, "Allied")
+    assert (st["disposition_points"], st["disposition_toward_player"]) == (70, "Allied")
+
+
+def test_npc_disposition_stays_in_range(ws):
+    ws.create_npc("Signe", {"name": "Signe"}, {"disposition_points": 90})
+    ws.apply_delta({"npc_updates": {"Signe": {"disposition_delta": 30}}})
+    assert ws.get_npc("Signe")["state"]["disposition_points"] == 100
 
 
 def test_duplicate_npc_is_rejected(ws):
@@ -161,11 +165,31 @@ def test_xp_grants_eligibility_not_rank(ws):
 
 
 def test_promotion_rite_advances_exactly_one_tier(ws):
-    ws.apply_delta({"xp_delta": 600})  # eligible all the way to tier 4
+    for _ in range(6):
+        ws.apply_delta({"xp_delta": 100})  # 600 XP: eligible all the way to tier 4
     assert ws.apply_delta({"promote": True}) == [
         {"type": "tier_up", "from": 1, "to": 2, "title": "Tracker"}
     ]
     assert ws.get_progression()["pending_tier"] == 4
+
+
+def test_one_verdict_cannot_grant_a_windfall(ws):
+    ws.apply_delta(
+        {
+            "xp_delta": 5000,
+            "inventory_add": ["crown", "dragon egg", "bag of gold", "legendary sword"],
+            "location": "x" * 500,
+        }
+    )
+    assert ws.get_progression()["xp"] == 100
+    assert ws.get_state()["inventory"] == ["crown", "dragon egg", "bag of gold"]
+    assert len(ws.get_field("player.location")) == 120
+
+
+def test_xp_never_goes_down(ws):
+    ws.apply_delta({"xp_delta": 50})
+    ws.apply_delta({"xp_delta": -30})
+    assert ws.get_progression()["xp"] == 50
 
 
 def test_promotion_without_eligibility_is_a_no_op(ws):

@@ -1,26 +1,3 @@
-"""World State Agent — the single source of truth.
-
-Pure Python, no model call. Owns state/session_state.json and is the only thing
-in the system that writes to it. Every other agent reads through it and writes
-through it.
-
-Beyond the plain getters/setters it acts as the deterministic guardrail:
-  * enum validation — rejects off-track values (e.g. role "Bard") before they can
-    corrupt the save
-  * numeric layer — hp / energy_points / disposition_points are the source of
-    truth; their labels (health / energy / disposition) are DERIVED from lookup
-    bands and never set directly. Everything clamps, so a runaway delta can never
-    land on an unmapped value.
-  * progression — xp drives tier/title via per-role thresholds.
-  * turn transaction — begin_turn() snapshots state, mutations stage in memory,
-    commit() persists to disk, rollback() restores the snapshot if a turn fails
-    partway through.
-
-apply_delta() is the untrusted-model boundary: it accepts the Resolution Agent's
-structured delta (numeric: hp_delta / energy_delta / xp_delta / disposition_delta)
-and returns a list of mechanical events (tier_up, death, down) for the DM to narrate.
-"""
-
 from __future__ import annotations
 
 import copy
@@ -216,6 +193,13 @@ ROLE_LOADOUTS = {
         "grey cloak",
     ],
 }
+
+# Per-turn caps. A schema-valid delta can still be an unearned windfall; these bound
+# what one verdict can grant, whatever the model claims.
+MAX_XP_PER_TURN = 100  # "major world event" in the XP table; XP never goes down
+MAX_DISPOSITION_STEP = 30  # rules: ~15 per interaction, more only for huge moments
+MAX_ITEMS_PER_TURN = 3
+MAX_TEXT = 120  # an item name or a location, not a paragraph
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _DEFAULT_PATH = os.path.join(_PROJECT_ROOT, "state", "session_state.json")
@@ -535,7 +519,8 @@ class WorldState:
           world_flags: {flag: bool}
           quests: [{quest: {...}, status: "active|completed|failed"}]
         Every value passes through the clamping/validating setters, so a malformed
-        delta is repaired or rejected rather than corrupting the save.
+        delta is repaired or rejected rather than corrupting the save, and the
+        per-turn caps (MAX_*) bound how much a single verdict can grant.
         """
         events: list[dict] = []
         if not delta:
@@ -552,7 +537,7 @@ class WorldState:
         if delta.get("energy_delta"):
             self.adjust_energy(delta["energy_delta"])
         if delta.get("location"):
-            self.update_player(location=delta["location"])
+            self.update_player(location=str(delta["location"])[:MAX_TEXT])
         if delta.get("player"):
             changes = {
                 k: v
@@ -562,7 +547,7 @@ class WorldState:
             if changes:
                 self.update_player(**changes)
         if delta.get("xp_delta"):
-            event = self.add_xp(delta["xp_delta"])
+            event = self.add_xp(clamp(delta["xp_delta"], 0, MAX_XP_PER_TURN))
             if event:
                 events.append(event)
         if delta.get("promote"):
@@ -570,8 +555,8 @@ class WorldState:
             if event:
                 events.append(event)
 
-        for item in delta.get("inventory_add", []) or []:
-            self.add_item(item)
+        for item in (delta.get("inventory_add") or [])[:MAX_ITEMS_PER_TURN]:
+            self.add_item(str(item)[:MAX_TEXT])
         for item in delta.get("inventory_remove", []) or []:
             self.remove_item(item)
         for target, value in (delta.get("reputation") or {}).items():
@@ -583,7 +568,10 @@ class WorldState:
                 continue
             changes = dict(changes)
             if "disposition_delta" in changes:
-                self.adjust_npc_disposition(name, changes.pop("disposition_delta"))
+                step = changes.pop("disposition_delta")
+                self.adjust_npc_disposition(
+                    name, clamp(step, -MAX_DISPOSITION_STEP, MAX_DISPOSITION_STEP)
+                )
             if changes:
                 self.update_npc_state(name, **changes)
         for flag, value in (delta.get("world_flags") or {}).items():

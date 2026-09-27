@@ -1,20 +1,16 @@
-"""Scripted playtest / smoke test for the Thunorheim agent pipeline.
-
-Runs a fixed sequence of turns against a throwaway state file (never touches
-state/session_state.json) and prints the narration plus a state snapshot after
-each turn. Useful for demos and as a regression check that the four-agent loop
-still works end to end.
-
-    uv run python evals/smoke.py
-"""
-
 from __future__ import annotations
 
+import asyncio
+import io
 import os
+import sys
 import tempfile
 
 from thunorheim.dm_agent import DMAgent
 from thunorheim.world_state import WorldState
+
+if isinstance(sys.stdout, io.TextIOWrapper):  # model prose isn't always cp1252-safe
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 SCRIPT = [
     # (label, action)
@@ -64,10 +60,14 @@ def main() -> None:
         print(f"TURN: {label}")
         print(f"> {action}\n")
         try:
-            print(dm.run_turn(action))
+            print(asyncio.run(dm.run_turn(action)))
         except Exception as exc:
             print(f"[turn rolled back] {exc}")
         print()
+        for c in dm.last_trace.get("calls", []):
+            ttft = f" ttft {c['ttft_ms']}ms" if c["ttft_ms"] else ""
+            errors = f" errors={c['errors']}" if c["errors"] else ""
+            print(f"    {c['role']:8} {c['provider']}:{c['model']}  {c['ms']}ms{ttft}{errors}")
         print(snapshot(ws))
         print()
 

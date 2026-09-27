@@ -1,15 +1,6 @@
-"""Thunorheim — Streamlit front end.
-
-A wide landscape view: the generated world image as a full-page backdrop, dark
-frosted-glass panels, medieval typography, a chat-style narration log on the left,
-and a live world-state + agent-trace sidebar on the right.
-
-Run locally:  .venv/Scripts/streamlit run app.py
-Requires a valid `az login` (same Foundry auth the engine uses).
-"""
-
 from __future__ import annotations
 
+import asyncio
 import base64
 import copy
 import html
@@ -179,6 +170,7 @@ def has_save() -> bool:
 
 
 def new_world() -> WorldState:
+    os.makedirs(os.path.dirname(SAVE_PATH), exist_ok=True)  # state/ isn't in a fresh clone
     with open(SAVE_PATH, "w", encoding="utf-8") as fh:
         json.dump(copy.deepcopy(_DEFAULT_STATE), fh, indent=2, ensure_ascii=False)
     return WorldState()
@@ -322,7 +314,7 @@ def screen_launch() -> None:
             ws = WorldState()
             dm = DMAgent(ws)
             with st.spinner("Recalling the tale so far…"):
-                recap = dm.recap()
+                recap = asyncio.run(dm.recap())
             st.session_state.ws = ws
             st.session_state.dm = dm
             st.session_state.messages = [{"who": "dm", "text": recap}]
@@ -398,7 +390,7 @@ def screen_play() -> None:
         st.session_state.messages.append({"who": "player", "text": prompt})
         try:
             with st.spinner("The world responds…"):
-                prose = dm.run_turn(prompt)
+                prose = asyncio.run(dm.run_turn(prompt))
             kind = "overreach" if dm.last_trace.get("overreach") else "dm"
             st.session_state.messages.append({"who": kind, "text": prose})
             if dm.game_over:

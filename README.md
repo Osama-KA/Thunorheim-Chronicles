@@ -3,8 +3,13 @@
 > *A frontier holds the line against the Blight.*
 
 Thunorheim is a persistent-memory narrative RPG powered by a four-agent reasoning
-system built on Microsoft Azure AI Foundry. It is a submission for the Microsoft AI
-Skills Fest — Agents League, Challenge B: Role-Play-Game System.
+system. It began as a submission for the Microsoft AI Skills Fest — Agents League,
+Challenge B: Role-Play-Game System, built on Azure AI Foundry.
+
+> **Status:** being rebuilt for v1. The hackathon version (Azure AI Foundry) is tagged
+> [`v0.1.0`](../../tree/v0.1.0); the current code runs on any OpenAI-compatible provider
+> (see `models.toml`). Sections below that mention Azure describe the hackathon build and
+> will be rewritten when v1 ships.
 
 Every choice leaves a permanent mark. The world remembers. Consequences are enforced
 by logic, not narrative convenience. No matter how long the campaign runs, nothing
@@ -291,10 +296,8 @@ on rare malformed model output.
 **Prerequisites**
 
 - [uv](https://docs.astral.sh/uv/) (installs Python 3.13 for you)
-- An Azure AI Foundry project with: a `gpt-5-mini` deployment, the three prompt agents
-  (`dm-agent`, `resolution-agent`, `npc-agent`) registered, and an Azure AI Search index
-  (Foundry IQ) populated with the `knowledge-base/` documents
-- Azure CLI signed in: `az login`
+- An API key for at least one provider in `models.toml` (Gemini, Groq, or NVIDIA);
+  roles skip providers without a key
 
 **Install**
 

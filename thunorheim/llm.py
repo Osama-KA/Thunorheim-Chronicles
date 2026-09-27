@@ -1,89 +1,413 @@
-"""Shared LLM access — New Foundry Agent Service (Responses API).
-
-Three named prompt agents (DM, Resolution, NPC) are registered in Foundry
-and invoked via the Responses API. Each shows up as a distinct agent in the
-Foundry portal with full traces.
-"""
-
 from __future__ import annotations
 
-import functools
+import asyncio
+import contextvars
+import hashlib
 import json
 import os
+import random
+import time
+import tomllib
+from collections.abc import AsyncIterator
+from dataclasses import dataclass, field
+from functools import cache
+from pathlib import Path
+from typing import Any
 
-from azure.ai.projects import AIProjectClient
-from azure.identity import DefaultAzureCredential
+import httpx
+import openai
 from dotenv import load_dotenv
+from openai import AsyncOpenAI, Omit, omit
+from openai.types.chat import ChatCompletionMessageParam, ChatCompletionStreamOptionsParam
+from openai.types.chat.completion_create_params import ResponseFormat
+from pydantic import BaseModel, ValidationError
 
 load_dotenv()
 
-
-@functools.cache
-def _openai_client():
-    """Built on first use, so importing the engine needs no credentials (tests, CI)."""
-    project = AIProjectClient(
-        endpoint=os.environ["AZURE_AI_PROJECT_ENDPOINT"],
-        credential=DefaultAzureCredential(),
-    )
-    return project.get_openai_client()
+ROOT = Path(__file__).resolve().parent.parent
+TIMEOUT = httpx.Timeout(60.0, connect=10.0)
+TRANSIENT = (openai.APITimeoutError, openai.APIConnectionError, openai.InternalServerError)
 
 
-_AGENT_NAMES = {
-    "dm": "dm-agent",
-    "resolution": "resolution-agent",
-    "npc": "npc-agent",
-}
-_DEFAULT_AGENT = "dm-agent"
+class Reset:
+    """Yielded by stream() when a provider died mid-reply: discard what you have."""
 
 
-def _invoke(agent_name: str, system: str, user: str) -> str:
-    """Invoke a named Foundry prompt agent via the Responses API."""
-    client = _openai_client()
-    conversation = client.conversations.create(
-        items=[
+RESET = Reset()
+
+
+class AllProvidersFailed(RuntimeError):
+    pass
+
+
+# --- tracing -----------------------------------------------------------------------
+
+
+@dataclass
+class Attempt:
+    provider: str
+    model: str
+    outcome: str  # "ok", "429", "empty reply", "incomplete (length)", "APITimeoutError", ...
+    tokens_in: int | None = None  # None: the provider didn't report usage, not zero
+    tokens_out: int | None = None
+
+
+@dataclass
+class Span:
+    role: str
+    prompt: str
+    provider: str = ""
+    model: str = ""
+    ms: int = 0
+    ttft_ms: int | None = None
+    tokens_in: int | None = None  # totals over every attempt that reported usage
+    tokens_out: int | None = None
+    retries: int = 0
+    errors: list[str] = field(default_factory=list)
+    attempts: list[Attempt] = field(default_factory=list)
+    ok: bool = False
+
+    def attempt(self, provider: Provider, model: str, outcome: str, usage: Any = None) -> None:
+        tokens_in = usage.prompt_tokens if usage else None
+        tokens_out = usage.completion_tokens if usage else None
+        self.attempts.append(Attempt(provider.name, model, outcome, tokens_in, tokens_out))
+        if outcome == "ok":
+            self.provider, self.model, self.ok = provider.name, model, True
+        else:
+            self.errors.append(f"{provider.name}: {outcome}")
+
+
+_trace: contextvars.ContextVar[list[Span] | None] = contextvars.ContextVar("trace", default=None)
+
+
+def start_trace() -> list[Span]:
+    """Collect a Span for every model call made from the current task onward."""
+    spans: list[Span] = []
+    _trace.set(spans)
+    return spans
+
+
+def _finish(span: Span, t0: float) -> None:
+    span.ms = round((time.perf_counter() - t0) * 1000)
+    known_in = [a.tokens_in for a in span.attempts if a.tokens_in is not None]
+    known_out = [a.tokens_out for a in span.attempts if a.tokens_out is not None]
+    span.tokens_in = sum(known_in) if known_in else None
+    span.tokens_out = sum(known_out) if known_out else None
+    spans = _trace.get()
+    if spans is not None:
+        spans.append(span)
+
+
+# --- record / replay ------------------------------------------------------------
+
+
+@cache
+def _recordings(path: Path) -> dict[str, tuple[dict[str, Any], ...]]:
+    """Every recorded response per request key, in the order they happened."""
+    takes: dict[str, list[dict[str, Any]]] = {}
+    if path.exists():
+        for line in filter(None, path.read_text(encoding="utf-8").splitlines()):
+            entry = json.loads(line)
+            takes.setdefault(entry["key"], []).append(entry)
+    return {key: tuple(entries) for key, entries in takes.items()}
+
+
+class Cassette(httpx.AsyncBaseTransport):
+    """Replays recorded model traffic; in record mode, forwards and saves it."""
+
+    def __init__(
+        self,
+        path: Path,
+        *,
+        record: bool,
+        cursors: dict[str, int],
+        inner: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
+        self.path = path
+        self.record = record
+        self.cursors = cursors  # per session, so a repeated request replays its next take
+        self.inner = inner or httpx.AsyncHTTPTransport()
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        key = hashlib.sha256(request.url.host.encode() + request.content).hexdigest()[:20]
+        if not self.record:
+            takes = _recordings(self.path).get(key, ())
+            n = self.cursors.get(key, 0)
+            if n >= len(takes):
+                # a 404, not an exception: the client would wrap an exception as a
+                # connection error, and the gateway would retry it as a blip
+                message = f"no recording {key} (take {n + 1}) in {self.path}; re-record"
+                return httpx.Response(404, json={"error": {"message": message}})
+            self.cursors[key] = n + 1
+            return self._response(takes[n])
+        response = await self.inner.handle_async_request(request)
+        body = (await response.aread()).decode()
+        entry = {
+            "key": key,
+            "status": response.status_code,
+            "type": response.headers.get("content-type", ""),
+            "body": body,
+        }
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self.path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry) + "\n")
+        return self._response(entry)  # record and replay hand the client the same thing
+
+    @staticmethod
+    def _response(entry: dict[str, Any]) -> httpx.Response:
+        # The body is stored decoded, so only the content type goes back; echoing the
+        # provider's content-encoding would make the client gunzip plain text.
+        headers = {"content-type": entry["type"]}
+        return httpx.Response(entry["status"], headers=headers, content=entry["body"])
+
+
+# --- configuration -----------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Provider:
+    name: str
+    client: AsyncOpenAI
+    use: str
+    json: str
+    stream_usage: bool
+
+
+@dataclass
+class _Settings:
+    config: dict[str, Any] | None = None
+    profile: str | None = None
+    transport: httpx.AsyncBaseTransport | None = None
+    replay: Path | None = None
+    record: Path | None = None
+    cursors: dict[str, int] = field(default_factory=dict)
+
+
+_settings = _Settings()
+_built: tuple[asyncio.AbstractEventLoop, dict[str, Provider]] | None = None
+
+
+def configure(
+    *,
+    config: dict[str, Any] | None = None,
+    profile: str | None = None,
+    transport: httpx.AsyncBaseTransport | None = None,
+    replay: Path | None = None,
+    record: Path | None = None,
+) -> None:
+    """Override env/file settings (tests, evals). Call with no args to reset."""
+    global _settings, _built
+    _settings = _Settings(config, profile, transport, replay, record)
+    _built = None
+
+
+def _config() -> dict[str, Any]:
+    if _settings.config is not None:
+        return _settings.config
+    path = Path(os.environ.get("THUNORHEIM_MODELS", ROOT / "models.toml"))
+    with path.open("rb") as fh:
+        return tomllib.load(fh)
+
+
+def _profile() -> str:
+    return _settings.profile or os.environ.get("THUNORHEIM_PROFILE", "dev")
+
+
+def _env_path(value: Path | None, env: str) -> Path | None:
+    raw = value or os.environ.get(env)
+    return Path(raw) if raw else None
+
+
+def _providers() -> dict[str, Provider]:
+    # ponytail: clients are rebuilt per event loop because the sync UIs call
+    # asyncio.run() per turn and httpx pools are loop-bound. A long-lived loop
+    # (the API server) builds them once.
+    global _built
+    loop = asyncio.get_running_loop()
+    if _built is not None and _built[0] is loop:
+        return _built[1]
+
+    replay = _env_path(_settings.replay, "THUNORHEIM_REPLAY")
+    record = _env_path(_settings.record, "THUNORHEIM_RECORD")
+    transport = _settings.transport
+    if replay or record:
+        path = replay or record
+        assert path is not None
+        transport = Cassette(path, record=bool(record), cursors=_settings.cursors, inner=transport)
+
+    providers = {}
+    for name, spec in _config()["providers"].items():
+        key = os.environ.get(spec["key_env"]) or ("replay" if replay else None)
+        if not key:
+            continue  # not configured on this machine; chains skip it
+        http = httpx.AsyncClient(transport=transport, timeout=TIMEOUT) if transport else None
+        client = AsyncOpenAI(
+            base_url=spec["base_url"], api_key=key, max_retries=0, timeout=TIMEOUT, http_client=http
+        )
+        providers[name] = Provider(
+            name, client, spec["use"], spec.get("json", "none"), spec.get("stream_usage", False)
+        )
+    _built = (loop, providers)
+    return providers
+
+
+def _chain(role: str) -> list[tuple[Provider, str]]:
+    providers = _providers()
+    public_only = _profile() == "public"
+    chain = []
+    for entry in _config()["roles"][role]:
+        name, model = entry.split(":", 1)
+        provider = providers.get(name)
+        if provider and (provider.use == "public" or not public_only):
+            chain.append((provider, model))
+    if not chain:
+        raise AllProvidersFailed(
+            f"no usable provider for role {role!r} (profile={_profile()}); check API keys in .env"
+        )
+    return chain
+
+
+def _backoff(attempt: int) -> float:
+    return 0.5 * 2.0**attempt * random.uniform(0.5, 1.5)
+
+
+# --- calls ---------------------------------------------------------------------------
+
+
+async def _complete(
+    role: str, messages: list[ChatCompletionMessageParam], prompt: str, want_json: bool = False
+) -> str:
+    span, t0 = Span(role, prompt), time.perf_counter()
+    try:
+        for provider, model in _chain(role):
+            fmt: ResponseFormat | Omit = omit
+            if want_json and provider.json == "object":
+                fmt = {"type": "json_object"}
+            for attempt in range(2):
+                try:
+                    resp = await provider.client.chat.completions.create(
+                        model=model,
+                        messages=messages,
+                        response_format=fmt,
+                    )
+                except openai.RateLimitError:
+                    span.attempt(provider, model, "429")
+                    break  # quota, not a blip: next provider
+                except TRANSIENT as err:
+                    span.attempt(provider, model, type(err).__name__)
+                    if attempt == 0:
+                        span.retries += 1
+                        await asyncio.sleep(_backoff(attempt))
+                    continue
+                choice = resp.choices[0] if resp.choices else None
+                if choice is None or choice.finish_reason != "stop":
+                    # cut off (length) or filtered: a partial answer is not an answer
+                    reason = choice.finish_reason if choice else "no choice"
+                    span.attempt(provider, model, f"incomplete ({reason})", resp.usage)
+                    break
+                if not choice.message.content:
+                    # thinking models can spend the whole reply on hidden reasoning
+                    span.attempt(provider, model, "empty reply", resp.usage)
+                    break
+                span.attempt(provider, model, "ok", resp.usage)
+                return choice.message.content
+        raise AllProvidersFailed(f"{role}: {'; '.join(span.errors)}")
+    finally:
+        _finish(span, t0)
+
+
+def _messages(system: str, user: str) -> list[ChatCompletionMessageParam]:
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+
+def _json_body(raw: str) -> str:
+    """Tolerate prose or code fences around the JSON object."""
+    start, end = raw.find("{"), raw.rfind("}")
+    return raw[start : end + 1] if start != -1 and end > start else raw
+
+
+async def structured[T: BaseModel](
+    role: str, schema: type[T], system: str, user: str, *, prompt: str
+) -> T:
+    """One model call parsed into `schema`; one retry with the validation error fed back."""
+    messages = _messages(system, user)
+    raw = await _complete(role, messages, prompt, want_json=True)
+    try:
+        return schema.model_validate_json(_json_body(raw))
+    except ValidationError as err:
+        problems = "\n".join(f"- {'.'.join(map(str, e['loc']))}: {e['msg']}" for e in err.errors())
+        messages += [
+            {"role": "assistant", "content": raw},
             {
-                "type": "message",
                 "role": "user",
-                "content": (
-                    f"<system_instructions>\n{system}\n</system_instructions>\n\n"
-                    f"<user_input>\n{user}\n</user_input>"
-                ),
-            }
+                "content": f"That JSON failed validation:\n{problems}\n"
+                "Return the corrected JSON object only.",
+            },
         ]
-    )
-    response = client.responses.create(
-        conversation=conversation.id,
-        extra_body={"agent_reference": {"name": agent_name, "type": "agent_reference"}},
-    )
-    return response.output_text or ""
+        raw = await _complete(role, messages, prompt, want_json=True)
+        return schema.model_validate_json(_json_body(raw))
 
 
-def chat(system: str, user: str, json_mode: bool = False, caller: str | None = None) -> str:
-    """Invoke the appropriate named Foundry agent. Returns response text."""
-    agent_name = _AGENT_NAMES.get(caller or "", _DEFAULT_AGENT)
-    return _invoke(agent_name, system, user)
+async def text(role: str, system: str, user: str, *, prompt: str) -> str:
+    messages = _messages(system, user)
+    return (await _complete(role, messages, prompt)).strip()
 
 
-def chat_json(system: str, user: str, caller: str | None = None) -> dict:
-    """Chat that must return JSON. Tolerates markdown fences; retries once if the
-    model returns malformed JSON, so a rare bad emission doesn't cost a whole turn."""
+async def stream(role: str, system: str, user: str, *, prompt: str) -> AsyncIterator[str | Reset]:
+    """Yield text deltas. If a provider dies mid-reply, yield RESET and restart on the
+    next one."""
+    messages = _messages(system, user)
+    span, t0 = Span(role, prompt), time.perf_counter()
     try:
-        return _parse_json(chat(system, user, caller=caller))
-    except (json.JSONDecodeError, ValueError):
-        return _parse_json(chat(system, user, caller=caller))
+        for provider, model in _chain(role):
+            started, finish, used = False, None, None
+            usage: ChatCompletionStreamOptionsParam | Omit = omit
+            if provider.stream_usage:
+                usage = {"include_usage": True}
+            try:
+                resp = await provider.client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    stream=True,
+                    stream_options=usage,
+                )
+                async for chunk in resp:
+                    choice = chunk.choices[0] if chunk.choices else None
+                    if choice and choice.delta.content:
+                        if not started:
+                            span.ttft_ms = round((time.perf_counter() - t0) * 1000)
+                            started = True
+                        yield choice.delta.content
+                    if choice and choice.finish_reason:
+                        finish = choice.finish_reason
+                    used = chunk.usage or used
+            except (openai.RateLimitError, *TRANSIENT, httpx.HTTPError) as err:
+                # ponytail: streams fail over without a same-provider retry
+                outcome = "429" if isinstance(err, openai.RateLimitError) else type(err).__name__
+                span.attempt(provider, model, outcome, used)
+                if started:
+                    yield RESET
+                continue
+            if finish != "stop" or not started:
+                # cut off, filtered, ended without finishing, or said nothing
+                outcome = "empty reply" if finish == "stop" else f"incomplete ({finish})"
+                span.attempt(provider, model, outcome, used)
+                if started:
+                    yield RESET
+                continue
+            span.attempt(provider, model, "ok", used)
+            return
+        raise AllProvidersFailed(f"{role}: {'; '.join(span.errors)}")
+    finally:
+        _finish(span, t0)
 
 
-def _parse_json(raw: str) -> dict:
-    raw = raw.strip()
-    if raw.startswith("```"):
-        raw = raw.split("```", 2)[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-        raw = raw.strip().rstrip("`").strip()
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        start, end = raw.find("{"), raw.rfind("}")
-        if start != -1 and end != -1:
-            return json.loads(raw[start : end + 1])
-        raise
+async def collect(chunks: AsyncIterator[str | Reset]) -> str:
+    """Drain a stream into its final text, honoring RESET."""
+    parts: list[str] = []
+    async for chunk in chunks:
+        if isinstance(chunk, Reset):
+            parts.clear()
+        else:
+            parts.append(chunk)
+    return "".join(parts).strip()

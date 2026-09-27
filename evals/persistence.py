@@ -1,17 +1,6 @@
-"""Final persistence test — one long, continuous, reactive 75-turn playthrough
-through the real Foundry pipeline.
-
-A goal-driven AI player pursues the Ashwatch Post / Shattered Seal arc. Mid-run we
-tear down and rebuild WorldState/DMAgent from the save file (cross-session
-persistence), and at a few points we deliberately return to an early NPC (memory
-callbacks). Per-turn persistence assertions run throughout; a transcript and a
-persistence summary are written to pipeline_runs/.
-
-Run: uv run python evals/persistence.py
-"""
-
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import tempfile
@@ -31,7 +20,6 @@ from thunorheim.world_state import (
 
 OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pipeline_runs")
 os.makedirs(OUT_DIR, exist_ok=True)
-SIM_MODEL = os.environ["AZURE_AI_MODEL_DEPLOYMENT"]
 CANONICAL_FLAGS = {
     "drenhold_discovered",
     "ashen_seal_found",
@@ -57,20 +45,20 @@ _orig_resolve = resolution_agent.resolve
 _orig_ensure = npc_agent.ensure_npc
 
 
-def _w_route(*a, **k):
-    r = _orig_route(*a, **k)
-    CAP["routing"] = r
+async def _w_route(*a, **k):
+    r = await _orig_route(*a, **k)
+    CAP["routing"] = r.model_dump()
     return r
 
 
-def _w_resolve(*a, **k):
-    v = _orig_resolve(*a, **k)
-    CAP["verdict"] = v
+async def _w_resolve(*a, **k):
+    v = await _orig_resolve(*a, **k)
+    CAP["verdict"] = v.model_dump()
     return v
 
 
-def _w_ensure(*a, **k):
-    r = _orig_ensure(*a, **k)
+async def _w_ensure(*a, **k):
+    r = await _orig_ensure(*a, **k)
     CAP["npc_resolved"] = r["sheet"]["profile"].get("name")
     return r
 
@@ -101,11 +89,7 @@ def simulate_player(ws: WorldState, last_narration: str) -> str:
     )
     for attempt in range(3):
         try:
-            r = llm._openai_client().chat.completions.create(
-                model=SIM_MODEL,
-                messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
-            )
-            out = (r.choices[0].message.content or "").strip()
+            out = asyncio.run(llm.text("sim", system, user, prompt="sim@1"))
             if out:
                 return out
         except Exception:
@@ -250,7 +234,7 @@ def main():
             CAP["_callback_name"] = met_order[0]
         pre = snapshot(ws)
         try:
-            prose = dm.run_turn(action)
+            prose = asyncio.run(dm.run_turn(action))
         except Exception as exc:
             prose = f"[ERROR: {exc}]"
             results.append((turn, "RUN_TURN_EXCEPTION", False, repr(exc)))

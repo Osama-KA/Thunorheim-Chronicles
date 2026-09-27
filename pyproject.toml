@@ -6,10 +6,9 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
-    "azure-ai-projects==2.2.0",
-    "azure-identity>=1.25.3",
-    "azure-search-documents==11.7.0b2",
-    "openai>=2.41.1,<3",  # 3.x swaps httpx for httpx2; azure-ai-projects still imports httpx
+    "httpx>=0.28.1",
+    "openai>=2.41.1,<3",  # 3.x moves to httpx2; the gateway's transports are httpx
+    "pydantic>=2.13",
     "python-dotenv>=1.2.2",
     "streamlit>=1.58.0",
 ]
@@ -39,3 +38,11 @@ testpaths = ["tests"]
 [tool.mypy]
 python_version = "3.13"
 files = ["thunorheim", "tests", "main.py", "app.py"]
+
+[[tool.mypy.overrides]]
+module = ["thunorheim.llm", "thunorheim.lore", "thunorheim.schemas"]  # new code is typed strictly
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+disallow_untyped_calls = true
+disallow_any_generics = true
+warn_return_any = true

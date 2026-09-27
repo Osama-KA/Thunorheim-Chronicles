@@ -1,0 +1,42 @@
+# Which model plays which role. Each role lists "provider:model" in failover order.
+#
+# `use` records what the provider's terms allow:
+#   public — may serve the hosted demo
+#   dev    — internal testing and evaluation only (NVIDIA API trial terms)
+# THUNORHEIM_PROFILE=public drops every `dev` provider from every chain.
+#
+# `json` is how the provider enforces JSON output:
+#   object — response_format {"type": "json_object"}
+#   none   — prompt-only; the reply is still schema-validated
+#
+# See docs/providers.md for the capability matrix and sources.
+
+[providers.gemini]
+base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
+key_env = "GEMINI_API_KEY"
+use = "public"
+json = "object"
+stream_usage = true
+
+[providers.groq]
+base_url = "https://api.groq.com/openai/v1"
+key_env = "GROQ_API_KEY"
+use = "public"
+json = "object"
+stream_usage = true
+
+[providers.nvidia]
+base_url = "https://integrate.api.nvidia.com/v1"
+key_env = "NVIDIA_API_KEY"
+use = "dev"
+json = "object"
+stream_usage = true
+
+# Defaults verified live 2026-09-27; the P3 bake-off picks the narrator.
+# Groq's free tier (~8k tokens/min) can't take a Resolution prompt, so resolve skips it.
+[roles]
+route = ["groq:qwen/qwen3.8-27b", "gemini:gemini-3.5-flash-lite", "nvidia:nvidia/nemotron-3-super-120b-a12b"]
+resolve = ["gemini:gemini-3.5-flash", "nvidia:nvidia/nemotron-3-super-120b-a12b", "gemini:gemini-3.5-flash-lite"]
+npc = ["gemini:gemini-3.5-flash-lite", "groq:openai/gpt-oss-120b", "nvidia:nvidia/nemotron-3-super-120b-a12b"]
+narrate = ["groq:openai/gpt-oss-120b", "gemini:gemini-3.5-flash-lite", "nvidia:nvidia/nemotron-3-super-120b-a12b"]
+sim = ["nvidia:nvidia/nemotron-3-super-120b-a12b", "groq:openai/gpt-oss-20b"]  # AI player for evals
